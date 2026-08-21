@@ -1,28 +1,34 @@
 /*
   fareUtils.js — Helper functions for fare calculation and route simulation.
 
-  These are plain JavaScript functions — no React here.
-  Keeping logic separate from components makes it easier to test and reuse.
+  Previously this file imported data directly from providers.js (a local JSON file).
+  Now it fetches data from the Express backend, which reads from MySQL.
+
+  Because fetching data over a network takes time, these functions are now
+  async — meaning they return a Promise and must be awaited by the caller.
 */
 
-import { rideTypes, providers, landmarks } from '../data/providers.js'
+// The base URL of our backend — all API calls go here
+const API = 'http://localhost:3001/api'
 
 /* ─────────────────────────────────────────────
    calculateFare
    ─────────────────────────────────────────────
-   Applies the standard ride-hailing pricing formula:
-     Total = baseFare + (perKm × distance) + (perMin × duration)
+   Pure calculation — no network call needed.
+   This function stays exactly the same as before.
 
-   @param {object} rideType   - one entry from rideTypes[]
-   @param {number} distanceKm - route distance in kilometres
+   @param {object} rideType    - one ride type object from the database
+   @param {number} distanceKm  - route distance in kilometres
    @param {number} durationMin - route duration in minutes
    @returns {number} fare in KES, rounded to nearest integer
 */
 export function calculateFare(rideType, distanceKm, durationMin) {
-  const fare =
-    rideType.baseFare +
-    rideType.perKm * distanceKm +
-    rideType.perMin * durationMin
+  // parseFloat converts string values from MySQL into actual numbers
+  const baseFare = parseFloat(rideType.base_fare)
+  const perKm    = parseFloat(rideType.per_km)
+  const perMin   = parseFloat(rideType.per_min)
+
+  const fare = baseFare + (perKm * distanceKm) + (perMin * durationMin)
 
   return Math.round(fare)
 }
@@ -30,19 +36,37 @@ export function calculateFare(rideType, distanceKm, durationMin) {
 /* ─────────────────────────────────────────────
    getMockRoute
    ─────────────────────────────────────────────
-   Simulates a route between two locations.
-   If both locations are known landmarks, uses real coordinates.
-   Otherwise, generates a plausible random distance.
+   Fetches landmarks from the backend, looks up the two locations,
+   and calculates the route distance and duration.
+
+   Now async because it needs to fetch from the backend first.
 
    @param {string} pickup  - user's "from" input
    @param {string} dropoff - user's "to" input
-   @returns {{ distance, duration, pickupCoords, dropoffCoords }}
+   @returns {Promise<{ distance, duration, pickupCoords, dropoffCoords }>}
 */
-export function getMockRoute(pickup, dropoff) {
+export async function getMockRoute(pickup, dropoff) {
   // Normalise to lowercase so "Westlands" matches "westlands"
   const fromKey = pickup.trim().toLowerCase()
   const toKey   = dropoff.trim().toLowerCase()
-// Look up coordinates in landmarks data
+
+  // Fetch all landmarks from the backend
+  const response = await fetch(`${API}/landmarks`)
+  const landmarkRows = await response.json()
+
+  /*
+    The database returns an array of objects like:
+    [{ id: 1, name: 'westlands', latitude: -1.2676, longitude: 36.8123 }, ...]
+
+    We convert this into a lookup object (same shape as before) so the
+    rest of the function works exactly as it did with the old JSON file.
+  */
+  const landmarks = {}
+  landmarkRows.forEach(row => {
+    // parseFloat converts the string values MySQL returns into actual numbers
+    landmarks[row.name] = [parseFloat(row.latitude), parseFloat(row.longitude)]
+  })
+
   const pickupCoords  = landmarks[fromKey]  || null
   const dropoffCoords = landmarks[toKey]    || null
 
@@ -58,7 +82,7 @@ export function getMockRoute(pickup, dropoff) {
     distance = parseFloat((Math.random() * 23 + 2).toFixed(1))
   }
 
-  // Rough Nairobi estimate: slightly faster average travel time after traffic smoothing
+  // Rough Nairobi estimate: ~3.5 minutes per km accounting for traffic
   const duration = Math.max(5, Math.round(distance * 3.5))
 
   return { distance, duration, pickupCoords, dropoffCoords }
@@ -67,23 +91,36 @@ export function getMockRoute(pickup, dropoff) {
 /* ─────────────────────────────────────────────
    buildResults
    ─────────────────────────────────────────────
-   Takes a route and returns all ride options with fares calculated,
-   sorted cheapest first, with the cheapest flagged as "bestValue".
+   Fetches providers and ride types from the backend,
+   calculates fares, and returns a sorted results array.
+
+   Now async because it fetches from the backend.
 
    @param {number} distanceKm
    @param {number} durationMin
-   @returns {Array} sorted array of result objects
+   @returns {Promise<Array>} sorted array of result objects
 */
-export function buildResults(distanceKm, durationMin) {
+export async function buildResults(distanceKm, durationMin) {
+  // Fetch both providers and ride types from the backend in parallel
+  // Promise.all means both requests fire at the same time instead of one after the other
+  const [providersRes, rideTypesRes] = await Promise.all([
+    fetch(`${API}/providers`),
+    fetch(`${API}/ride-types`)
+  ])
+
+  const providers = await providersRes.json()
+  const rideTypes = await rideTypesRes.json()
+
+  // Build results array — same logic as before
   const results = rideTypes.map(rt => {
-    // Find the full provider object for this ride type
-    const provider = providers.find(p => p.id === rt.providerId)
+    // Find the matching provider for this ride type
+    const provider = providers.find(p => p.id === rt.provider_id)
 
     return {
       ...rt,
-      providerName: provider.name,
+      providerName:  provider.name,
       providerColor: provider.color,
-      providerBg: provider.bgColor,
+      providerBg:    provider.bg_color,  // note: bg_color not bgColor (MySQL snake_case)
       fare: calculateFare(rt, distanceKm, durationMin),
     }
   })
@@ -96,7 +133,7 @@ export function buildResults(distanceKm, durationMin) {
 
   // Flag the fastest ETA option
   const fastestIdx = results.reduce(
-    (minIdx, r, i, arr) => r.etaMin < arr[minIdx].etaMin ? i : minIdx, 0
+    (minIdx, r, i, arr) => r.eta_min < arr[minIdx].eta_min ? i : minIdx, 0
   )
   results[fastestIdx].fastest = true
 
@@ -104,17 +141,28 @@ export function buildResults(distanceKm, durationMin) {
 }
 
 /* ─────────────────────────────────────────────
+   getDriver
+   ─────────────────────────────────────────────
+   Fetches a random driver from the backend matching the vehicle type.
+   Previously this was done in BookingPage using the local mockDrivers array.
+   Now it calls the backend which picks a random driver from MySQL.
+
+   @param {string} vehicleType - e.g. 'standard', 'boda', 'xl', 'comfort', 'delivery'
+   @returns {Promise<object>} a single driver object
+*/
+export async function getDriver(vehicleType) {
+  const response = await fetch(`${API}/drivers/${vehicleType}`)
+  const driver = await response.json()
+  return driver
+}
+
+/* ─────────────────────────────────────────────
    haversineKm  (internal helper)
    ─────────────────────────────────────────────
-   Calculates the straight-line distance between two
-   [lat, lng] coordinate pairs using the Haversine formula.
-
-   @param {[number, number]} coordA
-   @param {[number, number]} coordB
-   @returns {number} distance in kilometres
+   Unchanged from before — pure math, no network call.
 */
 function haversineKm([lat1, lon1], [lat2, lon2]) {
-  const R = 6371 // Earth's radius in km
+  const R = 6371
   const dLat = toRad(lat2 - lat1)
   const dLon = toRad(lon2 - lon1)
 

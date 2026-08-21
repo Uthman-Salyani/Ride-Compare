@@ -7,7 +7,6 @@
 */
 export default function RideCard({ ride, onBook }) {
   return (
-    /* Card container with conditional styling for best value rides */
     <div
       className={`bg-white border rounded-2xl p-4 flex items-center gap-4 card-hover
         ${ride.bestValue ? 'border-emerald-400 border-l-4' : 'border-gray-200'}`}
@@ -33,8 +32,8 @@ export default function RideCard({ ride, onBook }) {
           {/* Best value badge */}
           {ride.bestValue && (
             <span className="text-xs bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">
-              Best value 
-            </span> 
+              Best value
+            </span>
           )}
 
           {/* Fastest ETA badge */}
@@ -47,7 +46,7 @@ export default function RideCard({ ride, onBook }) {
 
         {/* Meta: ETA and capacity */}
         <div className="flex gap-3 mt-1 text-xs text-gray-500">
-          <span>⏱ {ride.etaMin} min away</span>
+          <span>⏱ {ride.eta_min} min away</span>
           <span>👤 {ride.capacity} seats</span>
         </div>
 
@@ -56,15 +55,15 @@ export default function RideCard({ ride, onBook }) {
       {/* Right section: fare + book button */}
       <div className="flex flex-col items-end gap-2 shrink-0">
         <span className="text-base font-bold text-gray-900">
-          KES {ride.fare.toLocaleString()} {/* Fare amount - toLocaleString makes it comma-separated in terms of thousands */}
+          KES {ride.fare.toLocaleString()}
         </span>
         <button
-          onClick={onBook} /* Call the onBook() callback when clicked */
+          onClick={onBook}
           className={`text-xs px-4 py-1.5 rounded-lg font-medium transition
             ${ride.bestValue
               ? 'bg-emerald-500 hover:bg-emerald-600 text-white'
               : 'border border-gray-200 text-gray-700 hover:bg-gray-50'
-            }`} /* ? 'bg-emerald-500' is a conditional class for the best value ride */
+            }`}
         >
           Book
         </button>

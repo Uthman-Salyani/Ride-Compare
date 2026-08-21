@@ -1,12 +1,13 @@
-import { useState, useEffect } from 'react' // React hooks for state and side effects
-import { mockDrivers } from '../data/providers.js' // Mock driver data for booking confirmation screen
+import { useState, useEffect } from 'react'
+import { getDriver } from '../utils/fareUtils.js'
 
 /*
   BookingPage.jsx — Simulates a booking confirmation after the user selects a ride.
 
-  It shows:
-    1. A loading/matching screen (2 seconds)
-    2. A confirmation screen with a randomly assigned driver and countdown timer
+  Changes from the previous version:
+  - No longer imports mockDrivers from providers.js
+  - Fetches a real driver from the backend using getDriver()
+  - ride.etaMin → ride.eta_min to match MySQL snake_case column names
 
   Props:
     ride      — the ride option the user chose
@@ -17,38 +18,44 @@ export default function BookingPage({ ride, routeData, onReset }) {
   // 'loading' | 'confirmed'
   const [status, setStatus] = useState('loading')
 
-  // Randomly pick a driver from the mock list
-  const [driver] = useState( 
-    () => mockDrivers[Math.floor(Math.random() * mockDrivers.length)]
-  )
+  // Driver fetched from the backend
+  const [driver, setDriver] = useState(null)
 
-  // Countdown in seconds (starts at etaMin × 60)
-  const [seconds, setSeconds] = useState(ride.etaMin * 60)
+  // Countdown in seconds — starts at eta_min × 60 (snake_case from MySQL)
+  const [seconds, setSeconds] = useState(ride.eta_min * 60)
 
-  // After 2 seconds of "loading", switch to confirmed screen
+  /*
+    On mount: fetch a matching driver from the backend, then after 2 seconds
+    switch to the confirmed screen. Both happen in parallel — the 2 second
+    delay gives the fetch time to complete before the screen switches.
+  */
   useEffect(() => {
+    // Fetch a driver matching the ride's vehicle type from the backend
+    getDriver(ride.vehicle_type)
+      .then(data => setDriver(data))
+      .catch(err => console.error('Failed to fetch driver:', err))
+
+    // After 2 seconds switch to confirmed screen
     const timer = setTimeout(() => setStatus('confirmed'), 2000)
-    return () => clearTimeout(timer) // cleanup if component unmounts
+    return () => clearTimeout(timer)
   }, [])
 
   // Countdown ticker — runs every second once confirmed
   useEffect(() => {
-    if (status !== 'confirmed') return // only start countdown after confirmation
-    if (seconds <= 0) return // stop countdown if it reaches 0
+    if (status !== 'confirmed') return
+    if (seconds <= 0) return
 
-    // Start a 1-second interval to decrement the countdown
     const tick = setInterval(() => {
       setSeconds(prev => prev - 1)
     }, 1000)
 
-    return () => clearInterval(tick) // cleanup on unmount
+    return () => clearInterval(tick)
   }, [status, seconds])
 
   // Format seconds → "m:ss" string
   function formatTime(secs) {
     const m = Math.floor(secs / 60)
     const s = secs % 60
-    // Pad seconds with leading zero if needed
     return `${m}:${s.toString().padStart(2, '0')}`
   }
 
@@ -56,9 +63,22 @@ export default function BookingPage({ ride, routeData, onReset }) {
   if (status === 'loading') {
     return (
       <div className="flex flex-col items-center justify-center min-h-64 gap-4">
-        {/* Spinning circle */}
         <div className="w-12 h-12 border-4 border-emerald-200 border-t-emerald-500 rounded-full animate-spin" />
         <p className="text-gray-600 text-sm font-medium">Finding your driver...</p>
+      </div>
+    )
+  }
+
+  /*
+    Guard: if the screen switched to confirmed but the driver fetch
+    hasn't returned yet, keep showing the spinner rather than crashing
+    trying to render driver.name on a null object.
+  */
+  if (!driver) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-64 gap-4">
+        <div className="w-12 h-12 border-4 border-emerald-200 border-t-emerald-500 rounded-full animate-spin" />
+        <p className="text-gray-600 text-sm font-medium">Assigning your driver...</p>
       </div>
     )
   }
@@ -82,24 +102,19 @@ export default function BookingPage({ ride, routeData, onReset }) {
         {/* Driver info */}
         <div className="flex items-center gap-4">
           {/* Avatar initials */}
-          <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center
-                          text-lg font-semibold text-gray-700">
-            {/* Get the initials of the driver's name. */}
+          <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center text-lg font-semibold text-gray-700">
             {driver.name.split(' ').map(n => n[0]).join('')}
           </div>
-
           <div>
             <p className="font-medium text-gray-900">{driver.name}</p>
             <p className="text-sm text-gray-500">⭐ {driver.rating} · {driver.car}</p>
           </div>
-
           {/* Number plate badge */}
           <span className="ml-auto text-sm font-mono bg-gray-100 text-gray-700 px-3 py-1 rounded-lg">
             {driver.plate}
           </span>
         </div>
 
-        {/* Divider */}
         <div className="border-t border-gray-100" />
 
         {/* Countdown timer */}
@@ -110,26 +125,22 @@ export default function BookingPage({ ride, routeData, onReset }) {
           </p>
         </div>
 
-        {/* Divider */}
         <div className="border-t border-gray-100" />
 
         {/* Trip summary */}
         <div className="flex flex-col gap-1 text-sm text-gray-600">
           <div className="flex justify-between">
             <span className="text-gray-400">From</span>
-            <span>{routeData.pickup}</span> {/* Show pickup location */}
+            <span>{routeData.pickup}</span>
           </div>
-
           <div className="flex justify-between">
             <span className="text-gray-400">To</span>
-            <span>{routeData.dropoff}</span> {/* Show dropoff location */}
+            <span>{routeData.dropoff}</span>
           </div>
-
           <div className="flex justify-between">
             <span className="text-gray-400">Fare estimate</span>
             <span className="font-semibold text-gray-900">KES {ride.fare}</span>
           </div>
-          
           <div className="flex justify-between">
             <span className="text-gray-400">Ride type</span>
             <span>{ride.type}</span>
@@ -140,8 +151,7 @@ export default function BookingPage({ ride, routeData, onReset }) {
       {/* Cancel button */}
       <button
         onClick={onReset}
-        className="w-full border border-gray-200 text-gray-600 hover:bg-gray-50
-                   rounded-xl py-3 text-sm transition"
+        className="w-full border border-gray-200 text-gray-600 hover:bg-gray-50 rounded-xl py-3 text-sm transition"
       >
         Cancel ride
       </button>
