@@ -190,15 +190,21 @@ USE ridecompare;
 Then create the four tables and insert the seed data as defined in the [Database Schema](#database-schema) section above.
 
 ### 3. Configure the backend
-Open `backend/index.js` and update the database connection with your MySQL credentials:
-```js
-const db = mysql.createConnection({
-  host:     'localhost',
-  user:     'root',
-  password: 'your_password_here',
-  database: 'ridecompare'
-})
+Copy the example environment file and fill in your own MySQL credentials:
+```bash
+cp backend/.env.example backend/.env
 ```
+
+Open `backend/.env` and update it:
+```
+DB_HOST=localhost
+DB_USER=root
+DB_PASSWORD=your_password_here
+DB_NAME=ridecompare
+PORT=3001
+```
+
+> ⚠️ Never commit your `.env` file — it is already in `.gitignore`.
 
 ### 4. Start the backend
 ```bash
@@ -270,7 +276,7 @@ Westlands, CBD, Kilimani, Karen, Eastleigh, Lavington, Parklands, Upperhill, Gig
 Built by the ICS-2.1C Web Development group at Strathmore University.
 
 - **Uthman Salyani** — [@Uthman-Salyani](https://github.com/Uthman-Salyani)
-- **Edenmike Mwaura** — [@GT-MRE](https://github.com/GT_MRE)
+- **Edenmike Mwaura** — [@GT_MRE](https://github.com/GT_MRE)
 - **Ashley Akinyi** — [@itsashleyakinyi](https://github.com/itsashleyakinyi)
 - **Joy Gatimu** — [@joy-gatimu](https://github.com/joy-gatimu)
 

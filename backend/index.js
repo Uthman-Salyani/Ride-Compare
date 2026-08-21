@@ -1,21 +1,20 @@
 const express = require('express')
 const mysql = require('mysql2')
 const cors = require('cors')
+require('dotenv').config() // loads variables from .env into process.env
 
 const app = express()
 
-// Allow React (running on port 5173) to talk to this backend
 app.use(cors())
-
-// Allow the backend to read JSON from request bodies
 app.use(express.json())
 
 // ─── Database Connection ───────────────────────────────────────────────────
+// Credentials are read from the .env file — never hardcoded
 const db = mysql.createConnection({
-  host:     'localhost',
-  user:     'root',      // your MySQL username
-  password: 'us@404',          // your MySQL password — fill this in
-  database: 'ridecompare'
+  host:     process.env.DB_HOST,
+  user:     process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME
 })
 
 db.connect(err => {
@@ -28,7 +27,6 @@ db.connect(err => {
 
 // ─── Routes ───────────────────────────────────────────────────────────────
 
-// GET all providers
 app.get('/api/providers', (req, res) => {
   db.query('SELECT * FROM providers', (err, results) => {
     if (err) return res.status(500).json({ error: err.message })
@@ -36,7 +34,6 @@ app.get('/api/providers', (req, res) => {
   })
 })
 
-// GET all ride types
 app.get('/api/ride-types', (req, res) => {
   db.query('SELECT * FROM ride_types', (err, results) => {
     if (err) return res.status(500).json({ error: err.message })
@@ -44,7 +41,6 @@ app.get('/api/ride-types', (req, res) => {
   })
 })
 
-// GET all landmarks
 app.get('/api/landmarks', (req, res) => {
   db.query('SELECT * FROM landmarks', (err, results) => {
     if (err) return res.status(500).json({ error: err.message })
@@ -52,13 +48,12 @@ app.get('/api/landmarks', (req, res) => {
   })
 })
 
-// GET a random driver by vehicle type
 app.get('/api/drivers/:vehicleType', (req, res) => {
   const { vehicleType } = req.params
   const sql = `
-    SELECT * FROM drivers 
-    WHERE vehicle_type = ? 
-    ORDER BY RAND() 
+    SELECT * FROM drivers
+    WHERE vehicle_type = ?
+    ORDER BY RAND()
     LIMIT 1
   `
   db.query(sql, [vehicleType], (err, results) => {
@@ -69,7 +64,7 @@ app.get('/api/drivers/:vehicleType', (req, res) => {
 })
 
 // ─── Start Server ─────────────────────────────────────────────────────────
-const PORT = 3001
+const PORT = process.env.PORT || 3001
 app.listen(PORT, () => {
   console.log(`🚀 Backend running at http://localhost:${PORT}`)
 })
