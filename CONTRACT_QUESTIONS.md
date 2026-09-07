@@ -18,4 +18,3 @@ Every other event object in the spec (the list, the single GET, and the POST res
 
 **Question:** As your event list grows over the semester, will `GET /events` still return the full unpaginated list, and can we confirm an empty result is a `200` with an empty array rather than a `404` or an error? We're using this endpoint to populate ride destinations, so an unbounded response size affects how we build our polling/caching logic on our side.
 
-s
