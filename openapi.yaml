@@ -1,0 +1,314 @@
+openapi: 3.0.0
+info:
+  title: RideCompare API
+  version: 1.0.0
+  description: >
+    Read-only API surface exposed to Voter Edu. All endpoints are GET.
+    RideCompare's own product also has internal write endpoints
+    (e.g. POST /bookings) used when a rider books directly through
+    RideCompare's app, but those are not exposed to this partner since
+    Voter Edu never books through us — see ENDPOINT_LIST.md Part D.
+
+paths:
+  /landmarks:
+    get:
+      summary: Return the list of Nairobi landmarks (name + location)
+      responses:
+        '200':
+          description: A list of Nairobi landmarks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Landmark'
+              example:
+                - id: "lmk_001"
+                  name: "Kenyatta International Convention Centre"
+                  location:
+                    lat: -1.2924
+                    lng: 36.8219
+                - id: "lmk_002"
+                  name: "Uhuru Park"
+                  location:
+                    lat: -1.2897
+                    lng: 36.8172
+
+  /landmarks/{id}:
+    get:
+      summary: Return details for a single landmark
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Unique identifier of the landmark
+          schema:
+            type: string
+            example: "lmk_001"
+      responses:
+        '200':
+          description: The requested landmark
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Landmark'
+              example:
+                id: "lmk_001"
+                name: "Kenyatta International Convention Centre"
+                location:
+                  lat: -1.2924
+                  lng: 36.8219
+        '404':
+          description: No landmark exists with the given id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: "NOT_FOUND"
+                message: "No landmark found with id 'lmk_999'"
+
+  /providers:
+    get:
+      summary: Return the list of ride providers included in comparisons
+      responses:
+        '200':
+          description: A list of ride providers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Provider'
+              example:
+                - id: "prov_littlecab"
+                  name: "Little Cab"
+                  logoUrl: "https://cdn.ridecompare.co.ke/logos/littlecab.png"
+                - id: "prov_bolt"
+                  name: "Bolt"
+                  logoUrl: "https://cdn.ridecompare.co.ke/logos/bolt.png"
+
+  /rides:
+    get:
+      summary: >
+        Return fare/ETA estimates for a pickup-dropoff pair across
+        providers, filterable by ride type, sortable by ETA or fare
+      parameters:
+        - name: pickup_lat
+          in: query
+          required: true
+          schema:
+            type: number
+            format: float
+            example: -1.2864
+        - name: pickup_lng
+          in: query
+          required: true
+          schema:
+            type: number
+            format: float
+            example: 36.8172
+        - name: dropoff_lat
+          in: query
+          required: true
+          schema:
+            type: number
+            format: float
+            example: -1.3197
+        - name: dropoff_lng
+          in: query
+          required: true
+          schema:
+            type: number
+            format: float
+            example: 36.8271
+        - name: type
+          in: query
+          required: false
+          description: Filter results to a single ride type
+          schema:
+            type: string
+            enum: [Boda, Standard, XL]
+            example: "Standard"
+        - name: sort
+          in: query
+          required: false
+          description: Sort field for the returned estimates
+          schema:
+            type: string
+            enum: [eta, fare]
+            example: "eta"
+      responses:
+        '200':
+          description: A list of ride estimates matching the query
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RideEstimate'
+              example:
+                - id: "ride_est_9f3a"
+                  providerId: "prov_littlecab"
+                  providerName: "Little Cab"
+                  rideType: "Standard"
+                  fare:
+                    currency: "KES"
+                    amount: 450.0
+                  etaMinutes: 7
+                  capacity: 4
+                - id: "ride_est_2b1c"
+                  providerId: "prov_bolt"
+                  providerName: "Bolt"
+                  rideType: "Boda"
+                  fare:
+                    currency: "KES"
+                    amount: 180.0
+                  etaMinutes: 4
+                  capacity: 1
+        '400':
+          description: Missing or invalid query parameters (e.g. non-numeric coordinates)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: "INVALID_PARAMETER"
+                message: "'pickup_lat' must be a valid float"
+
+  /rides/{id}:
+    get:
+      summary: Return a single ride estimate's detail (fare, ETA, capacity, provider)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Unique identifier of the ride estimate, as returned by GET /rides
+          schema:
+            type: string
+            example: "ride_est_9f3a"
+      responses:
+        '200':
+          description: The requested ride estimate
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RideEstimate'
+              example:
+                id: "ride_est_9f3a"
+                providerId: "prov_littlecab"
+                providerName: "Little Cab"
+                rideType: "Standard"
+                fare:
+                  currency: "KES"
+                  amount: 450.0
+                etaMinutes: 7
+                capacity: 4
+        '404':
+          description: No ride estimate exists with the given id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: "NOT_FOUND"
+                message: "No ride estimate found with id 'ride_est_9f3a'"
+
+components:
+  schemas:
+    Location:
+      type: object
+      required: [lat, lng]
+      properties:
+        lat:
+          type: number
+          format: float
+          example: -1.2864
+        lng:
+          type: number
+          format: float
+          example: 36.8172
+
+    Landmark:
+      type: object
+      required: [id, name, location]
+      properties:
+        id:
+          type: string
+          example: "lmk_001"
+        name:
+          type: string
+          example: "Kenyatta International Convention Centre"
+        location:
+          $ref: '#/components/schemas/Location'
+
+    Provider:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          example: "prov_littlecab"
+        name:
+          type: string
+          example: "Little Cab"
+        logoUrl:
+          type: string
+          format: uri
+          example: "https://cdn.ridecompare.co.ke/logos/littlecab.png"
+
+    FareEstimate:
+      type: object
+      required: [currency, amount]
+      properties:
+        currency:
+          type: string
+          example: "KES"
+        amount:
+          type: number
+          format: float
+          example: 450.0
+
+    RideEstimate:
+      type: object
+      required:
+        - id
+        - providerId
+        - providerName
+        - rideType
+        - fare
+        - etaMinutes
+        - capacity
+      properties:
+        id:
+          type: string
+          example: "ride_est_9f3a"
+        providerId:
+          type: string
+          example: "prov_littlecab"
+        providerName:
+          type: string
+          example: "Little Cab"
+        rideType:
+          type: string
+          enum: [Boda, Standard, XL]
+          example: "Standard"
+        fare:
+          $ref: '#/components/schemas/FareEstimate'
+        etaMinutes:
+          type: integer
+          example: 7
+        capacity:
+          type: integer
+          example: 4
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          example: "NOT_FOUND"
+        message:
+          type: string
+          example: "No ride estimate found with id 'ride_est_9f3a'"
