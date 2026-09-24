@@ -1,9 +1,3 @@
-# Contract Deviations
-
-<<<<<<< HEAD
-No deviations. All database records from MySQL are explicitly mapped and type-cast to conform strictly to the OpenAPI contract schema.
-
-=======
 ## Week 6 — POST /landmarks added
 
 **Change:** Added `POST /landmarks` write endpoint to the contract.
@@ -27,4 +21,3 @@ and is not part of the partner integration surface.
 
 No deviations. All database records from MySQL are explicitly mapped
 and type-cast to conform strictly to the OpenAPI contract schema.
->>>>>>> 0156b4b (POST endpoint added + updated CONTRACT_DEVIATION.md file)
