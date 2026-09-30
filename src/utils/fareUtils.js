@@ -9,7 +9,7 @@
 */
 
 // The base URL of our backend — all API calls go here
-const API = 'http://localhost:3001/api'
+const API = 'http://localhost:3001'
 
 /* ─────────────────────────────────────────────
    calculateFare
@@ -64,7 +64,9 @@ export async function getMockRoute(pickup, dropoff) {
   const landmarks = {}
   landmarkRows.forEach(row => {
     // parseFloat converts the string values MySQL returns into actual numbers
-    landmarks[row.name] = [parseFloat(row.latitude), parseFloat(row.longitude)]
+    const latitude = row.latitude ?? row.location?.lat
+    const longitude = row.longitude ?? row.location?.lng
+    landmarks[row.name.toLowerCase()] = [parseFloat(latitude), parseFloat(longitude)]
   })
 
   const pickupCoords  = landmarks[fromKey]  || null
@@ -100,42 +102,60 @@ export async function getMockRoute(pickup, dropoff) {
    @param {number} durationMin
    @returns {Promise<Array>} sorted array of result objects
 */
-export async function buildResults(distanceKm, durationMin) {
-  // Fetch both providers and ride types from the backend in parallel
-  // Promise.all means both requests fire at the same time instead of one after the other
-  const [providersRes, rideTypesRes] = await Promise.all([
-    fetch(`${API}/providers`),
-    fetch(`${API}/ride-types`)
-  ])
+export async function buildResults(routeData) {
+  const { pickupCoords, dropoffCoords, selectedVehicleType } = routeData || {}
 
-  const providers = await providersRes.json()
-  const rideTypes = await rideTypesRes.json()
+  if (!pickupCoords || !dropoffCoords) {
+    return []
+  }
 
-  // Build results array — same logic as before
-  const results = rideTypes.map(rt => {
-    // Find the matching provider for this ride type
-    const provider = providers.find(p => p.id === rt.provider_id)
+  const params = new URLSearchParams({
+    pickup_lat: String(pickupCoords[0]),
+    pickup_lng: String(pickupCoords[1]),
+    dropoff_lat: String(dropoffCoords[0]),
+    dropoff_lng: String(dropoffCoords[1]),
+  })
+
+  if (selectedVehicleType) {
+    params.set('type', selectedVehicleType)
+  }
+
+  let response = await fetch(`${API}/rides?${params.toString()}`)
+  let rideEstimates = await response.json()
+
+  if (selectedVehicleType && rideEstimates.length === 0) {
+    params.delete('type')
+    response = await fetch(`${API}/rides?${params.toString()}`)
+    rideEstimates = await response.json()
+  }
+
+  const results = rideEstimates.map((ride, index) => {
+    const canonicalType = normalizeRideType(ride.rideType || ride.type)
+    const styles = getProviderStyles(ride.providerId || ride.providerName)
 
     return {
-      ...rt,
-      providerName:  provider.name,
-      providerColor: provider.color,
-      providerBg:    provider.bg_color,  // note: bg_color not bgColor (MySQL snake_case)
-      fare: calculateFare(rt, distanceKm, durationMin),
+      id: ride.id,
+      providerId: ride.providerId,
+      providerName: ride.providerName,
+      providerColor: styles.color,
+      providerBg: styles.bg,
+      type: ride.rideType || canonicalType,
+      vehicle_type: canonicalType,
+      fare: ride.fare?.amount ?? 0,
+      eta_min: ride.etaMinutes,
+      capacity: ride.capacity,
+      bestValue: index === 0,
     }
   })
 
-  // Sort by fare, cheapest first
-  results.sort((a, b) => a.fare - b.fare)
-
-  // Flag the cheapest option
-  results[0].bestValue = true
-
-  // Flag the fastest ETA option
   const fastestIdx = results.reduce(
-    (minIdx, r, i, arr) => r.eta_min < arr[minIdx].eta_min ? i : minIdx, 0
+    (minIdx, ride, index, arr) => ride.eta_min < arr[minIdx].eta_min ? index : minIdx,
+    0
   )
-  results[fastestIdx].fastest = true
+
+  if (results[fastestIdx]) {
+    results[fastestIdx].fastest = true
+  }
 
   return results
 }
@@ -154,6 +174,32 @@ export async function getDriver(vehicleType) {
   const response = await fetch(`${API}/drivers/${vehicleType}`)
   const driver = await response.json()
   return driver
+}
+
+function getProviderStyles(seed) {
+  const palette = [
+    { color: '#0f172a', bg: '#e2e8f0' },
+    { color: '#065f46', bg: '#d1fae5' },
+    { color: '#1d4ed8', bg: '#dbeafe' },
+    { color: '#7c2d12', bg: '#ffedd5' },
+    { color: '#6d28d9', bg: '#ede9fe' },
+  ]
+
+  const text = String(seed || 'ridecompare')
+  const hash = [...text].reduce((acc, char) => acc + char.charCodeAt(0), 0)
+  return palette[hash % palette.length]
+}
+
+function normalizeRideType(value) {
+  const text = String(value || '').toLowerCase().trim()
+
+  if (text.includes('boda')) return 'boda'
+  if (text.includes('standard') || text.includes('chapchap')) return 'standard'
+  if (text.includes('xl')) return 'xl'
+  if (text.includes('comfort')) return 'comfort'
+  if (text.includes('delivery') || text.includes('send') || text.includes('connect')) return 'delivery'
+
+  return text
 }
 
 /* ─────────────────────────────────────────────

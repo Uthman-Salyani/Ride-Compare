@@ -8,7 +8,9 @@ info:
     (e.g. POST /bookings) used when a rider books directly through
     RideCompare's app, but those are not exposed to this partner since
     Voter Edu never books through us — see ENDPOINT_LIST.md Part D.
-
+servers:
+  - url: http://localhost:3001
+    description: Local development server (replace with a URL your partner can reach when exchanging contracts)
 paths:
   /landmarks:
     get:
@@ -23,15 +25,15 @@ paths:
                 items:
                   $ref: '#/components/schemas/Landmark'
               example:
-                - id: "lmk_001"
-                  name: "Kenyatta International Convention Centre"
+                - id: "1"
+                  name: "westlands"
                   location:
-                    lat: -1.2924
-                    lng: 36.8219
-                - id: "lmk_002"
-                  name: "Uhuru Park"
+                    lat: -1.2676
+                    lng: 36.8123
+                - id: "2"
+                  name: "cbd"
                   location:
-                    lat: -1.2897
+                    lat: -1.2833
                     lng: 36.8172
 
   /landmarks/{id}:
@@ -41,10 +43,10 @@ paths:
         - name: id
           in: path
           required: true
-          description: Unique identifier of the landmark
+          description: Unique identifier of the landmark, as returned by GET /landmarks
           schema:
             type: string
-            example: "lmk_001"
+            example: "1"
       responses:
         '200':
           description: The requested landmark
@@ -53,11 +55,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/Landmark'
               example:
-                id: "lmk_001"
-                name: "Kenyatta International Convention Centre"
+                id: "1"
+                name: "westlands"
                 location:
-                  lat: -1.2924
-                  lng: 36.8219
+                  lat: -1.2676
+                  lng: 36.8123
         '404':
           description: No landmark exists with the given id
           content:
@@ -66,7 +68,7 @@ paths:
                 $ref: '#/components/schemas/Error'
               example:
                 code: "NOT_FOUND"
-                message: "No landmark found with id 'lmk_999'"
+                message: "No landmark found with id '9999'"
 
   /providers:
     get:
@@ -81,18 +83,22 @@ paths:
                 items:
                   $ref: '#/components/schemas/Provider'
               example:
-                - id: "prov_littlecab"
-                  name: "Little Cab"
-                  logoUrl: "https://cdn.ridecompare.co.ke/logos/littlecab.png"
-                - id: "prov_bolt"
+                - id: "little"
+                  name: "Little"
+                  logoUrl: "https://cdn.ridecompare.co.ke/logos/little.png"
+                - id: "bolt"
                   name: "Bolt"
                   logoUrl: "https://cdn.ridecompare.co.ke/logos/bolt.png"
 
   /rides:
     get:
       summary: >
-        Return fare/ETA estimates for a pickup-dropoff pair across
-        providers, filterable by ride type, sortable by ETA or fare
+        Return fare/ETA estimates across providers and ride types,
+        filterable by ride type, sortable by ETA or fare
+      description: >
+        pickup and dropoff coordinates are required and validated, but
+        fare.amount is currently each ride type's base fare only; it does
+        not vary with distance or travel time.
       parameters:
         - name: pickup_lat
           in: query
@@ -125,22 +131,22 @@ paths:
         - name: type
           in: query
           required: false
-          description: Filter results to a single ride type
+          description: Filter results to a single ride type (case-insensitive). Any other value returns 400.
           schema:
             type: string
-            enum: [Boda, Standard, XL]
+            enum: [Boda, Standard, XL, Comfort, Delivery]
             example: "Standard"
         - name: sort
           in: query
           required: false
-          description: Sort field for the returned estimates
+          description: Sort field for the returned estimates, ascending. Any other value returns 400.
           schema:
             type: string
             enum: [eta, fare]
             example: "eta"
       responses:
         '200':
-          description: A list of ride estimates matching the query
+          description: A list of ride estimates matching the query (empty array if none match)
           content:
             application/json:
               schema:
@@ -148,33 +154,35 @@ paths:
                 items:
                   $ref: '#/components/schemas/RideEstimate'
               example:
-                - id: "ride_est_9f3a"
-                  providerId: "prov_littlecab"
-                  providerName: "Little Cab"
+                - id: "uber-x"
+                  providerId: "uber"
+                  providerName: "Uber"
                   rideType: "Standard"
                   fare:
                     currency: "KES"
-                    amount: 450.0
-                  etaMinutes: 7
+                    amount: 120.0
+                  etaMinutes: 5
                   capacity: 4
-                - id: "ride_est_2b1c"
-                  providerId: "prov_bolt"
+                - id: "bolt-boda"
+                  providerId: "bolt"
                   providerName: "Bolt"
                   rideType: "Boda"
                   fare:
                     currency: "KES"
-                    amount: 180.0
-                  etaMinutes: 4
+                    amount: 41.0
+                  etaMinutes: 3
                   capacity: 1
         '400':
-          description: Missing or invalid query parameters (e.g. non-numeric coordinates)
+          description: >
+            Missing or invalid query parameters (non-numeric coordinates, or a
+            type or sort value outside the allowed list)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
               example:
                 code: "INVALID_PARAMETER"
-                message: "'pickup_lat' must be a valid float"
+                message: "'pickup_lat', 'pickup_lng', 'dropoff_lat', and 'dropoff_lng' must be valid floats"
 
   /rides/{id}:
     get:
@@ -186,7 +194,7 @@ paths:
           description: Unique identifier of the ride estimate, as returned by GET /rides
           schema:
             type: string
-            example: "ride_est_9f3a"
+            example: "uber-x"
       responses:
         '200':
           description: The requested ride estimate
@@ -195,14 +203,14 @@ paths:
               schema:
                 $ref: '#/components/schemas/RideEstimate'
               example:
-                id: "ride_est_9f3a"
-                providerId: "prov_littlecab"
-                providerName: "Little Cab"
+                id: "uber-x"
+                providerId: "uber"
+                providerName: "Uber"
                 rideType: "Standard"
                 fare:
                   currency: "KES"
-                  amount: 450.0
-                etaMinutes: 7
+                  amount: 120.0
+                etaMinutes: 5
                 capacity: 4
         '404':
           description: No ride estimate exists with the given id
@@ -212,7 +220,7 @@ paths:
                 $ref: '#/components/schemas/Error'
               example:
                 code: "NOT_FOUND"
-                message: "No ride estimate found with id 'ride_est_9f3a'"
+                message: "No ride estimate found with id 'nonexistent-id'"
 
 components:
   schemas:
@@ -223,11 +231,11 @@ components:
         lat:
           type: number
           format: float
-          example: -1.2864
+          example: -1.2676
         lng:
           type: number
           format: float
-          example: 36.8172
+          example: 36.8123
 
     Landmark:
       type: object
@@ -235,10 +243,10 @@ components:
       properties:
         id:
           type: string
-          example: "lmk_001"
+          example: "1"
         name:
           type: string
-          example: "Kenyatta International Convention Centre"
+          example: "westlands"
         location:
           $ref: '#/components/schemas/Location'
 
@@ -248,14 +256,14 @@ components:
       properties:
         id:
           type: string
-          example: "prov_littlecab"
+          example: "little"
         name:
           type: string
-          example: "Little Cab"
+          example: "Little"
         logoUrl:
           type: string
           format: uri
-          example: "https://cdn.ridecompare.co.ke/logos/littlecab.png"
+          example: "https://cdn.ridecompare.co.ke/logos/little.png"
 
     FareEstimate:
       type: object
@@ -267,7 +275,8 @@ components:
         amount:
           type: number
           format: float
-          example: 450.0
+          description: Base fare for the ride type. Not adjusted for distance or travel time.
+          example: 120.0
 
     RideEstimate:
       type: object
@@ -282,24 +291,25 @@ components:
       properties:
         id:
           type: string
-          example: "ride_est_9f3a"
+          example: "uber-x"
         providerId:
           type: string
-          example: "prov_littlecab"
+          example: "uber"
         providerName:
           type: string
-          example: "Little Cab"
+          example: "Uber"
         rideType:
           type: string
-          enum: [Boda, Standard, XL]
+          enum: [Boda, Standard, XL, Comfort, Delivery]
           example: "Standard"
         fare:
           $ref: '#/components/schemas/FareEstimate'
         etaMinutes:
           type: integer
-          example: 7
+          example: 5
         capacity:
           type: integer
+          description: Number of passenger seats (0 for delivery services)
           example: 4
 
     Error:
@@ -311,4 +321,4 @@ components:
           example: "NOT_FOUND"
         message:
           type: string
-          example: "No ride estimate found with id 'ride_est_9f3a'"
+          example: "No ride estimate found with id 'nonexistent-id'"

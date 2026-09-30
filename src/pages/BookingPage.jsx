@@ -25,19 +25,38 @@ export default function BookingPage({ ride, routeData, onReset }) {
   const [seconds, setSeconds] = useState(ride.eta_min * 60)
 
   /*
-    On mount: fetch a matching driver from the backend, then after 2 seconds
-    switch to the confirmed screen. Both happen in parallel — the 2 second
-    delay gives the fetch time to complete before the screen switches.
+    On mount: fetch a matching driver from the backend and switch to the
+    confirmed screen as soon as the lookup finishes.
   */
   useEffect(() => {
-    // Fetch a driver matching the ride's vehicle type from the backend
-    getDriver(ride.vehicle_type)
-      .then(data => setDriver(data))
-      .catch(err => console.error('Failed to fetch driver:', err))
+    let cancelled = false
 
-    // After 2 seconds switch to confirmed screen
-    const timer = setTimeout(() => setStatus('confirmed'), 2000)
-    return () => clearTimeout(timer)
+    async function loadDriver() {
+      try {
+        const data = await getDriver(ride.vehicle_type)
+        if (cancelled) return
+        setDriver(data)
+      } catch (err) {
+        console.error('Failed to fetch driver:', err)
+        if (cancelled) return
+        setDriver({
+          name: 'Assigned Driver',
+          rating: '4.8',
+          car: 'RideCompare Vehicle',
+          plate: 'RC-0000',
+        })
+      } finally {
+        if (!cancelled) {
+          setStatus('confirmed')
+        }
+      }
+    }
+
+    loadDriver()
+
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   // Countdown ticker — runs every second once confirmed

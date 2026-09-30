@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { getMockRoute } from '../utils/fareUtils.js'
 
+const VEHICLE_TYPES = ['boda', 'standard', 'xl', 'comfort', 'delivery']
+
 /*
   SearchPage.jsx
   Focused route form shown after the landing page.
@@ -20,36 +22,22 @@ export default function SearchPage({ onSearch }) {
   // Landmarks fetched from the backend — used for validation
   const [landmarks, setLandmarks] = useState([])
 
-  // Vehicle type options fetched from the backend — used for the dropdown
-  const [vehicleTypes, setVehicleTypes] = useState([])
-
   /*
     useEffect runs once when the component first mounts.
-    It fetches landmarks and ride types from the backend
-    to populate the dropdown and enable location validation.
+    It fetches landmarks from the backend to enable location validation.
   */
   useEffect(() => {
     // Fetch landmarks for validation
-    fetch('http://localhost:3001/api/landmarks')
+    fetch('http://localhost:3001/landmarks')
       .then(res => res.json())
       .then(data => setLandmarks(data))
       .catch(err => console.error('Failed to fetch landmarks:', err))
-
-    // Fetch ride types to extract unique vehicle types for the dropdown
-    fetch('http://localhost:3001/api/ride-types')
-      .then(res => res.json())
-      .then(data => {
-        // Extract unique vehicle types — same logic as before, now from the API
-        const unique = [...new Set(data.map(rt => rt.vehicle_type))]
-        setVehicleTypes(unique)
-      })
-      .catch(err => console.error('Failed to fetch ride types:', err))
   }, []) // empty array means this runs once on mount
 
   // Check if a location matches any landmark name in the database
   function isValidLocation(location) {
     const key = location.trim().toLowerCase()
-    return landmarks.some(lm => lm.name === key)
+    return landmarks.some(lm => lm.name?.toLowerCase() === key)
   }
 
   // Swap the two input values
@@ -143,7 +131,7 @@ export default function SearchPage({ onSearch }) {
               className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-slate-400"
             >
               <option value="">All types</option>
-              {vehicleTypes.map(vehicleType => (
+              {VEHICLE_TYPES.map(vehicleType => (
                 <option key={vehicleType} value={vehicleType}>
                   {vehicleType.charAt(0).toUpperCase() + vehicleType.slice(1)}
                 </option>

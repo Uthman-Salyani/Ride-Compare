@@ -44,7 +44,7 @@ export default function ResultsPage({ routeData, onBook }) {
   */
   useEffect(() => {
     setLoading(true)
-    buildResults(distance, duration)
+    buildResults({ pickupCoords, dropoffCoords, selectedVehicleType })
       .then(data => {
         setResults(data)
         setLoading(false)
@@ -53,7 +53,7 @@ export default function ResultsPage({ routeData, onBook }) {
         console.error('Failed to build results:', err)
         setLoading(false)
       })
-  }, [distance, duration])
+  }, [pickupCoords, dropoffCoords, selectedVehicleType])
 
   // Sort the results based on the user's selected sort preference
   const sorted = [...results].sort((a, b) => {
@@ -63,11 +63,10 @@ export default function ResultsPage({ routeData, onBook }) {
     return 0
   })
 
-  // Filter by vehicle type if the user selected one on the search page
-  const filtered = sorted.filter(ride => {
-    if (selectedVehicleType) return ride.vehicle_type === selectedVehicleType // snake_case
-    return true
-  })
+  // Filter by vehicle type if the user selected one on the search page.
+  const ridesToShow = selectedVehicleType
+    ? sorted.filter(ride => ride.vehicle_type === selectedVehicleType) // snake_case
+    : sorted
 
   return (
     <div className="flex flex-col gap-6">
@@ -127,8 +126,8 @@ export default function ResultsPage({ routeData, onBook }) {
       {/* Ride cards */}
       {!loading && (
         <div className="flex flex-col gap-3">
-          {filtered.length > 0 ? (
-            filtered.map(ride => (
+          {ridesToShow.length > 0 ? (
+            ridesToShow.map(ride => (
               <RideCard
                 key={ride.id}
                 ride={ride}
@@ -139,7 +138,7 @@ export default function ResultsPage({ routeData, onBook }) {
             ))
           ) : (
             <div className="rounded-2xl border border-dashed border-gray-300 bg-white p-6 text-sm text-gray-500">
-              No rides match the selected type. Go back and choose a different type or switch to All types.
+              No rides are available for the selected type.
             </div>
           )}
         </div>
