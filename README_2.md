@@ -12,7 +12,7 @@ Base URL: `https://booth-declare-workers-queens.trycloudflare.com`
 
 Opening the base URL on its own in a browser shows `Cannot GET /`. That is expected: the API has no home page. Add an endpoint path, for example `/providers`.
 
-> This is a temporary public address that only works while the API host has the server running. If every request fails or times out, the host's server is offline.
+> This is a temporary public address that only works while the API host has the server running. If every request fails or times out, the host's server is offline. In that case, use the "Run it yourself" section at the bottom.
 
 ---
 
@@ -199,4 +199,127 @@ has `code` and `message`, it failed.
 
 ---
 
+## Run it yourself (optional)
 
+Use this only if the hosted URL above is not responding. It runs the API on your own machine at `http://localhost:3001`; use `http://localhost:3001` in place of the base URL in every example above.
+
+Prerequisites: Node.js 18+ and MySQL 8 running locally.
+
+### 1. Get the code and install the backend
+
+```bash
+git clone https://github.com/Uthman-Salyani/Ride-Compare.git
+cd Ride-Compare/backend
+npm install
+```
+
+(The API lives in the `backend/` folder. You do not need the React frontend in the
+repo root to use the API.)
+
+### 2. Create the database and tables
+
+Open a MySQL shell (`mysql -u root -p`) and paste the whole block below. It is safe
+to run more than once.
+
+```sql
+CREATE DATABASE IF NOT EXISTS ridecompare;
+USE ridecompare;
+
+CREATE TABLE IF NOT EXISTS providers (
+  id        VARCHAR(20) PRIMARY KEY,
+  name      VARCHAR(50),
+  color     VARCHAR(10),   -- brand hex colour
+  bg_color  VARCHAR(10)    -- light background hex colour
+);
+
+CREATE TABLE IF NOT EXISTS ride_types (
+  id            VARCHAR(50) PRIMARY KEY,
+  provider_id   VARCHAR(20),
+  type          VARCHAR(50),
+  vehicle_type  VARCHAR(20),   -- standard | comfort | xl | boda | delivery
+  base_fare     DECIMAL(10,2),
+  per_km        DECIMAL(10,2),
+  per_min       DECIMAL(10,2),
+  capacity      INT,
+  eta_min       INT,
+  FOREIGN KEY (provider_id) REFERENCES providers(id)
+);
+
+CREATE TABLE IF NOT EXISTS landmarks (
+  id         INT AUTO_INCREMENT PRIMARY KEY,
+  name       VARCHAR(50) UNIQUE,
+  latitude   DECIMAL(10,7),
+  longitude  DECIMAL(10,7)
+);
+
+-- Used only by RideCompare's internal booking flow (not exposed by this API)
+CREATE TABLE IF NOT EXISTS drivers (
+  id            INT AUTO_INCREMENT PRIMARY KEY,
+  name          VARCHAR(100),
+  rating        DECIMAL(2,1),
+  plate         VARCHAR(20),
+  car           VARCHAR(100),
+  vehicle_type  VARCHAR(20)
+);
+```
+
+### 3. Load the sample data
+
+Still in the MySQL shell, paste this. These rows produce exactly the responses
+shown in the examples above.
+
+```sql
+INSERT IGNORE INTO providers (id, name, color, bg_color) VALUES
+  ('uber',   'Uber',   '#000000', '#F3F3F3'),
+  ('bolt',   'Bolt',   '#34D186', '#E8F9F1'),
+  ('little', 'Little', '#FF6B00', '#FFF1E6');
+
+INSERT IGNORE INTO ride_types
+  (id, provider_id, type, vehicle_type, base_fare, per_km, per_min, capacity, eta_min) VALUES
+  ('uber-x',    'uber', 'Standard', 'standard', 120.00, 30.00, 5.00, 4, 5),
+  ('bolt-boda', 'bolt', 'Boda',     'boda',      41.00, 15.00, 2.00, 1, 3);
+
+INSERT IGNORE INTO landmarks (name, latitude, longitude) VALUES
+  ('westlands', -1.2676000, 36.8123000),
+  ('cbd',       -1.2833000, 36.8172000);
+```
+
+### 4. Start the API
+
+From the `backend/` folder, copy the example settings file:
+
+```bash
+cp .env.example .env
+```
+
+Open `.env` and set `DB_PASSWORD` to your MySQL root password (leave it empty if
+your root user has no password). The other defaults are fine:
+
+```
+DB_HOST=localhost
+DB_USER=root
+DB_PASSWORD=
+DB_NAME=ridecompare
+PORT=3001
+```
+
+Then start the server:
+
+```bash
+node index.js
+```
+
+You should see `Backend running at http://localhost:3001` and
+`Connected to MySQL database (ridecompare)`. If you see `Database connection failed`,
+fix your `.env` credentials and restart.
+
+Check it works:
+
+```bash
+curl http://localhost:3001/providers
+curl http://localhost:3001/landmarks/1
+```
+
+You should see the providers list and the `westlands` landmark. If you see `[]`,
+the sample data in step 3 was not loaded. If you see a `500 INTERNAL_ERROR`, the
+API cannot reach the database.
