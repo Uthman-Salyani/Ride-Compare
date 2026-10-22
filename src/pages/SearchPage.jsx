@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getMockRoute } from '../utils/fareUtils.js'
+import { API, getMockRoute } from '../utils/fareUtils.js'
 
 const VEHICLE_TYPES = ['boda', 'standard', 'xl', 'comfort', 'delivery']
 
@@ -35,7 +35,7 @@ export default function SearchPage({ onSearch }) {
   */
   useEffect(() => {
     // Fetch landmarks for validation
-    fetch('http://localhost:3001/landmarks')
+    fetch(`${API}/landmarks`)
       .then(res => res.json())
       .then(data => setLandmarks(data))
       .catch(err => console.error('Failed to fetch landmarks:', err))
@@ -47,7 +47,7 @@ export default function SearchPage({ onSearch }) {
     message instead of crashing the page.
   */
   useEffect(() => {
-    fetch('http://localhost:3001/events')
+    fetch(`${API}/events`)
       .then(res => {
         if (!res.ok) throw new Error('events unavailable')
         return res.json()
@@ -184,7 +184,7 @@ export default function SearchPage({ onSearch }) {
       {/* Upcoming events from our partner's Events API (shown only when there is something to show) */}
       {(eventsError || events.length > 0) && (
         <div className="mt-5 border-t border-slate-200 pt-4">
-          <h3 className="text-sm font-black text-slate-950 sm:text-base">Upcoming campus events</h3>
+          <h3 className="text-sm font-black text-slate-950 sm:text-base">Upcoming campus events in Strathmore University located in Madaraka</h3>
 
           {eventsError && (
             <p className="mt-2 text-xs font-medium text-amber-600 sm:text-sm">

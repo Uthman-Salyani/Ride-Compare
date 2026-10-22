@@ -282,8 +282,6 @@ function formatDriverRow(row) {
   }
 }
 
-<<<<<<< HEAD
-=======
 
 const PARTNER_URL = process.env.PARTNER_URL;
 
@@ -307,7 +305,6 @@ app.get('/events', async (req, res) => {
   }
 });
 
->>>>>>> 31f3250941000a2c4fd6f530323a31ab38ed03c9
 // ─── Server Start ─────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001
 if (require.main === module) {

@@ -8,8 +8,8 @@
   async — meaning they return a Promise and must be awaited by the caller.
 */
 
-// The base URL of our backend — all API calls go here
-const API = 'http://localhost:3001'
+// The base URL of our backend — configurable per environment.
+export const API = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'
 
 /* ─────────────────────────────────────────────
    calculateFare
