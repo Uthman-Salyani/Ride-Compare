@@ -282,6 +282,32 @@ function formatDriverRow(row) {
   }
 }
 
+<<<<<<< HEAD
+=======
+
+const PARTNER_URL = process.env.PARTNER_URL;
+
+app.get('/events', async (req, res) => {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const r = await fetch(`${PARTNER_URL}/events?after=${today}`);
+    if (!r.ok) {
+      console.error('partner returned', r.status);
+      return res.status(502).json({ message: 'Events are unavailable right now' });
+    }
+    const events = await r.json();
+    res.json(
+      events
+        .filter(e => !e.cancelled)
+        .map(e => ({ id: e.id, title: e.title, location: e.location, startTime: e.startTime }))
+    );
+  } catch (err) {
+    console.error('partner call failed:', err.cause?.code || err.message);
+    res.status(502).json({ message: 'Events are unavailable right now' });
+  }
+});
+
+>>>>>>> 31f3250941000a2c4fd6f530323a31ab38ed03c9
 // ─── Server Start ─────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001
 if (require.main === module) {

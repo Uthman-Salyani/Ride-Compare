@@ -12,6 +12,9 @@ const VEHICLE_TYPES = ['boda', 'standard', 'xl', 'comfort', 'delivery']
   - No longer imports from providers.js
   - Fetches landmarks and ride type options from the backend API
   - handleSubmit is now async because getMockRoute is now async
+  - Week 10: also fetches upcoming events from our backend's /events route,
+    which calls the partner's Events API. Shows a friendly message if the
+    partner is unavailable.
 */
 export default function SearchPage({ onSearch }) {
   const [pickup,              setPickup]              = useState('')
@@ -21,6 +24,10 @@ export default function SearchPage({ onSearch }) {
 
   // Landmarks fetched from the backend — used for validation
   const [landmarks, setLandmarks] = useState([])
+
+  // Upcoming events from the partner (via our backend), and a failure flag
+  const [events,      setEvents]      = useState([])
+  const [eventsError, setEventsError] = useState(false)
 
   /*
     useEffect runs once when the component first mounts.
@@ -33,6 +40,24 @@ export default function SearchPage({ onSearch }) {
       .then(data => setLandmarks(data))
       .catch(err => console.error('Failed to fetch landmarks:', err))
   }, []) // empty array means this runs once on mount
+
+  /*
+    Fetch upcoming events once on mount. The browser only talks to our own
+    backend; the backend calls the partner. If anything fails, show a friendly
+    message instead of crashing the page.
+  */
+  useEffect(() => {
+    fetch('http://localhost:3001/events')
+      .then(res => {
+        if (!res.ok) throw new Error('events unavailable')
+        return res.json()
+      })
+      .then(data => setEvents(data))
+      .catch(err => {
+        console.error('Failed to fetch events:', err)
+        setEventsError(true)
+      })
+  }, [])
 
   // Check if a location matches any landmark name in the database
   function isValidLocation(location) {
@@ -155,6 +180,35 @@ export default function SearchPage({ onSearch }) {
       <p className="mt-3 text-center text-[11px] text-slate-500 sm:text-xs">
         Try Westlands, CBD, Kilimani, Karen, Eastleigh, Lavington, Upperhill, Parklands etc.
       </p>
+
+      {/* Upcoming events from our partner's Events API (shown only when there is something to show) */}
+      {(eventsError || events.length > 0) && (
+        <div className="mt-5 border-t border-slate-200 pt-4">
+          <h3 className="text-sm font-black text-slate-950 sm:text-base">Upcoming campus events</h3>
+
+          {eventsError && (
+            <p className="mt-2 text-xs font-medium text-amber-600 sm:text-sm">
+              Events are unavailable right now
+            </p>
+          )}
+
+          {!eventsError && (
+            <ul className="mt-2 flex flex-col gap-2">
+              {events.map(ev => (
+                <li
+                  key={ev.id}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-700 sm:text-sm"
+                >
+                  <p className="font-semibold text-slate-950">{ev.title}</p>
+                  <p className="mt-0.5 text-slate-500">
+                    {ev.location} · {new Date(ev.startTime).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </section>
   )
 }
