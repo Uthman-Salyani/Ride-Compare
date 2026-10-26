@@ -3,19 +3,26 @@ info:
   title: RideCompare API
   version: 1.0.0
   description: >
-    Read-only API surface exposed to Voter Edu. All endpoints are GET.
+    Read-only API surface exposed to Voter Edu. All endpoints are GET and every
+    request needs an API key in the X-API-Key header (100 requests/minute per key).
     RideCompare's own product also has internal write endpoints
     (e.g. POST /bookings) used when a rider books directly through
     RideCompare's app, but those are not exposed to this partner since
     Voter Edu never books through us — see ENDPOINT_LIST.md Part D.
 servers:
   - url: http://localhost:3001
-    description: Local development server (replace with a URL your partner can reach when exchanging contracts)
+    description: Local development server
+security:
+  - ApiKeyAuth: []
 paths:
   /landmarks:
     get:
       summary: Return the list of Nairobi landmarks (name + location)
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '200':
           description: A list of Nairobi landmarks
           content:
@@ -48,6 +55,10 @@ paths:
             type: string
             example: "1"
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '200':
           description: The requested landmark
           content:
@@ -74,6 +85,10 @@ paths:
     get:
       summary: Return the list of ride providers included in comparisons
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '200':
           description: A list of ride providers
           content:
@@ -145,6 +160,10 @@ paths:
             enum: [eta, fare]
             example: "eta"
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '200':
           description: A list of ride estimates matching the query (empty array if none match)
           content:
@@ -196,6 +215,10 @@ paths:
             type: string
             example: "uber-x"
       responses:
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '200':
           description: The requested ride estimate
           content:
@@ -223,6 +246,44 @@ paths:
                 message: "No ride estimate found with id 'nonexistent-id'"
 
 components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Per-consumer API key, sent on every request. Never commit or share it.
+  responses:
+    Unauthorized:
+      description: Missing or invalid API key
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: "UNAUTHORIZED"
+            message: "Missing or invalid API key"
+    TooManyRequests:
+      description: Rate limit exceeded (100 requests per minute per API key)
+      headers:
+        Retry-After:
+          description: Seconds until the caller may retry
+          schema:
+            type: integer
+            example: 42
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/Error'
+              - type: object
+                properties:
+                  retryAfter:
+                    type: integer
+                    example: 42
+          example:
+            code: "RATE_LIMITED"
+            message: "Too many requests"
+            retryAfter: 42
   schemas:
     Location:
       type: object
