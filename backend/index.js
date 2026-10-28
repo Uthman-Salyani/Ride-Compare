@@ -4,15 +4,80 @@ const cors = require('cors')
 require('dotenv').config()
 
 const app = express()
+app.disable('x-powered-by') // don't advertise the framework in response headers
 
 // Global CORS Middleware to prevent Swagger UI preflight blocks
 app.use(cors({
   origin: '*',
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  methods: ['GET', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'X-API-Key']
 }))
 
 app.use(express.json())
+
+// ─── API key auth + rate limiting (Week 9) ─────────────────────────────────
+// API_KEYS="voteredu:<key>,team:<key>"  ->  Map(key -> consumer name)
+const KEYS = new Map(
+  (process.env.API_KEYS || '')
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+    .map(pair => {
+      const i = pair.indexOf(':')
+      return [pair.slice(i + 1), pair.slice(0, i)]
+    })
+)
+console.log(`Loaded ${KEYS.size} API key(s)`) // count only, never the keys
+
+function requireApiKey(req, res, next) {
+  const key = req.get('X-API-Key')
+  if (!key || !KEYS.has(key)) {
+    return res.status(401).json({ code: "UNAUTHORIZED", message: "Missing or invalid API key" })
+  }
+  req.apiKey = key
+  req.consumer = KEYS.get(key)
+  next()
+}
+
+// 401 = "I don't know who you are", 403 = "I know who you are, and no"
+function requireConsumer(...allowed) {
+  return (req, res, next) => {
+    if (!allowed.includes(req.consumer)) {
+      return res.status(403).json({ code: "FORBIDDEN", message: "This key is not allowed to use this endpoint" })
+    }
+    next()
+  }
+}
+
+function rateLimit({ windowMs, max }) {
+  const hits = new Map() // key -> { count, resetAt }
+  return (req, res, next) => {
+    const id = req.apiKey || req.ip
+    const now = Date.now()
+    let entry = hits.get(id)
+    if (!entry || now >= entry.resetAt) {
+      entry = { count: 0, resetAt: now + windowMs }
+      hits.set(id, entry)
+    }
+    entry.count += 1
+    if (entry.count > max) {
+      const retryAfter = Math.ceil((entry.resetAt - now) / 1000)
+      res.set('Retry-After', String(retryAfter))
+      return res.status(429).json({ code: "RATE_LIMITED", message: "Too many requests", retryAfter })
+    }
+    next()
+  }
+}
+
+app.set('trust proxy', 1) // behind the Cloudflare tunnel
+app.use(requireApiKey)    // MUST come before every route (cors above handles OPTIONS preflight first)
+app.use(rateLimit({ windowMs: 60000, max: Number(process.env.RATE_LIMIT_MAX) || 100 }))
+
+// Never send database error text (table names, queries) to callers
+function dbError(res, err) {
+  console.error('DB error:', err.code || 'unknown')
+  return res.status(500).json({ code: "INTERNAL_ERROR", message: "Internal server error" })
+}
 
 // ─── Database Connection ───────────────────────────────────────────────────
 const db = mysql.createConnection({
@@ -34,7 +99,7 @@ db.connect(err => {
 // ─── 1. GET /providers ────────────────────────────────────────────────────
 app.get('/providers', (req, res) => {
   db.query('SELECT * FROM providers', (err, results) => {
-    if (err) return res.status(500).json({ code: "INTERNAL_ERROR", message: err.message })
+    if (err) return dbError(res, err)
     
     // Maps database fields to Provider contract schema
     const response = results.map(row => ({
@@ -50,7 +115,7 @@ app.get('/providers', (req, res) => {
 // ─── 2. GET /landmarks ────────────────────────────────────────────────────
 app.get('/landmarks', (req, res) => {
   db.query('SELECT * FROM landmarks', (err, results) => {
-    if (err) return res.status(500).json({ code: "INTERNAL_ERROR", message: err.message })
+    if (err) return dbError(res, err)
     
     // Maps latitude/longitude to nested location object with float types
     const response = results.map(row => ({
@@ -69,8 +134,11 @@ app.get('/landmarks', (req, res) => {
 // ─── 3. GET /landmarks/:id ────────────────────────────────────────────────
 app.get('/landmarks/:id', (req, res) => {
   const { id } = req.params
+  if (!/^\d+$/.test(id)) {
+    return res.status(404).json({ code: "NOT_FOUND", message: `No landmark found with id '${id}'` })
+  }
   db.query('SELECT * FROM landmarks WHERE id = ?', [id], (err, results) => {
-    if (err) return res.status(500).json({ code: "INTERNAL_ERROR", message: err.message })
+    if (err) return dbError(res, err)
     
     if (results.length === 0) {
       return res.status(404).json({
@@ -133,7 +201,7 @@ app.get('/rides', (req, res) => {
   `
 
   db.query(sql, (err, results) => {
-    if (err) return res.status(500).json({ code: "INTERNAL_ERROR", message: err.message })
+    if (err) return dbError(res, err)
     
     let filteredResults = [...results]
 
@@ -179,7 +247,7 @@ app.get('/rides/:id', (req, res) => {
   `
 
   db.query(sql, [id], (err, results) => {
-    if (err) return res.status(500).json({ code: "INTERNAL_ERROR", message: err.message })
+    if (err) return dbError(res, err)
     
     if (results.length === 0) {
       return res.status(404).json({
@@ -205,7 +273,7 @@ app.get('/rides/:id', (req, res) => {
 })
 
 // ─── 6. GET /drivers (QUERY PARAMS) ───────────────────────────────────────
-app.get('/drivers', (req, res) => {
+app.get('/drivers', requireConsumer('team'), (req, res) => {
   const vehicleType = req.query.type || req.query.vehicle_type || req.query.rideType
 
   // 1. Try matching the driver by vehicle type (flexible partial match)
@@ -241,7 +309,7 @@ app.get('/drivers', (req, res) => {
 })
 
 // ─── 7. GET /drivers/:type (PATH PARAM) ───────────────────────────────────
-app.get('/drivers/:type', (req, res) => {
+app.get('/drivers/:type', requireConsumer('team'), (req, res) => {
   const { type } = req.params
 
   const filterSql = `
@@ -283,15 +351,19 @@ function formatDriverRow(row) {
 }
 
 
-const PARTNER_URL = process.env.PARTNER_URL;
+const PARTNER_URL = process.env.PARTNER_URL; // e.g. https://mental-health-l6ub.onrender.com/api (no trailing slash)
 
 app.get('/events', async (req, res) => {
   try {
     const today = new Date().toISOString().slice(0, 10);
-    const r = await fetch(`${PARTNER_URL}/events?after=${today}`);
-    if (!r.ok) {
-      console.error('partner returned', r.status);
-      return res.status(502).json({ message: 'Events are unavailable right now' });
+    const r = await fetch(`${PARTNER_URL}/events?after=${today}`, {
+      headers: { 'X-API-Key': process.env.STRATHMORE_API_KEY || '' }, // upstream key, only from the environment
+      signal: AbortSignal.timeout(60000)                              // Render's free tier can take ~1 min to wake up
+    });
+    const contentType = r.headers.get('content-type') || '';
+    if (!r.ok || !contentType.includes('application/json')) {
+      console.error('partner returned', r.status, contentType);
+      return res.status(502).json({ code: 'UPSTREAM_UNAVAILABLE', message: 'Events are unavailable right now' });
     }
     const events = await r.json();
     res.json(
@@ -300,8 +372,8 @@ app.get('/events', async (req, res) => {
         .map(e => ({ id: e.id, title: e.title, location: e.location, startTime: e.startTime }))
     );
   } catch (err) {
-    console.error('partner call failed:', err.cause?.code || err.message);
-    res.status(502).json({ message: 'Events are unavailable right now' });
+    console.error('partner call failed:', err.cause?.code || err.name);
+    res.status(502).json({ code: 'UPSTREAM_UNAVAILABLE', message: 'Events are unavailable right now' });
   }
 });
 
