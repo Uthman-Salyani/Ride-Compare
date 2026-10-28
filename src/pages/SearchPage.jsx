@@ -184,7 +184,7 @@ export default function SearchPage({ onSearch }) {
       {/* Upcoming events from our partner's Events API (shown only when there is something to show) */}
       {(eventsError || events.length > 0) && (
         <div className="mt-5 border-t border-slate-200 pt-4">
-          <h3 className="text-sm font-black text-slate-950 sm:text-base">Upcoming campus events in Strathmore University located in Madaraka</h3>
+          <h3 className="text-sm font-black text-slate-950 sm:text-base">Upcoming campus events</h3>
 
           {eventsError && (
             <p className="mt-2 text-xs font-medium text-amber-600 sm:text-sm">

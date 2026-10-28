@@ -10,7 +10,7 @@ anything. Every endpoint is a `GET` and every response is JSON.
 
 Base URL: `https://booth-declare-workers-queens.trycloudflare.com`
 
-Opening the base URL on its own in a browser shows `Cannot GET /`. That is expected: the API has no home page. Add an endpoint path, for example `/providers`.
+The API has no home page, and every path needs an API key in the `X-API-Key` header, so opening a URL in a browser address bar returns `401` (a browser cannot send that header). Use `curl` or your app code with the header, as in the examples below.
 
 > This is a temporary public address that only works while the API host has the server running. If every request fails or times out, the host's server is offline. In that case, use the "Run it yourself" section at the bottom.
 
@@ -21,7 +21,7 @@ Opening the base URL on its own in a browser shows `Cannot GET /`. That is expec
 This returns the Standard rides between two Nairobi points, soonest ETA first:
 
 ```bash
-curl "https://booth-declare-workers-queens.trycloudflare.com/rides?pickup_lat=-1.2864&pickup_lng=36.8172&dropoff_lat=-1.3197&dropoff_lng=36.8271&type=Standard&sort=eta"
+curl -H "X-API-Key: <your-api-key>" "https://booth-declare-workers-queens.trycloudflare.com/rides?pickup_lat=-1.2864&pickup_lng=36.8172&dropoff_lat=-1.3197&dropoff_lng=36.8271&type=Standard&sort=eta"
 ```
 
 Expected: HTTP `200` and a JSON array like:
@@ -44,9 +44,31 @@ Expected: HTTP `200` and a JSON array like:
 
 ## Authentication
 
-None yet. This version needs **no API key and no `Authorization` header**.
-(Real authentication is planned for Week 9; when it arrives it will be
-documented here.)
+Every endpoint requires an API key, sent in the `X-API-Key` header on **every**
+request. Keys are issued per consumer: ask the API owner for yours, keep it
+private, and never commit it to a repo. In all examples below, replace
+`<your-api-key>` with your own key.
+
+```bash
+curl -H "X-API-Key: <your-api-key>" https://booth-declare-workers-queens.trycloudflare.com/providers
+```
+
+A missing or invalid key returns `401`:
+
+```json
+{ "code": "UNAUTHORIZED", "message": "Missing or invalid API key" }
+```
+
+## Rate limiting
+
+Each key may make **100 requests per minute**. Over the limit you get `429`,
+with a `Retry-After` header (seconds until you may retry) and a JSON body:
+
+```json
+{ "code": "RATE_LIMITED", "message": "Too many requests", "retryAfter": 42 }
+```
+
+Wait `retryAfter` seconds, then retry.
 
 ---
 
@@ -57,7 +79,7 @@ documented here.)
 List the ride providers included in comparisons.
 
 ```bash
-curl https://booth-declare-workers-queens.trycloudflare.com/providers
+curl -H "X-API-Key: <your-api-key>" https://booth-declare-workers-queens.trycloudflare.com/providers
 ```
 
 Response `200`:
@@ -75,7 +97,7 @@ List known Nairobi landmarks (name + coordinates). Use these as handy
 pickup/dropoff coordinates.
 
 ```bash
-curl https://booth-declare-workers-queens.trycloudflare.com/landmarks
+curl -H "X-API-Key: <your-api-key>" https://booth-declare-workers-queens.trycloudflare.com/landmarks
 ```
 
 Response `200`:
@@ -92,7 +114,7 @@ Response `200`:
 One landmark, by the `id` returned from `GET /landmarks`.
 
 ```bash
-curl https://booth-declare-workers-queens.trycloudflare.com/landmarks/1
+curl -H "X-API-Key: <your-api-key>" https://booth-declare-workers-queens.trycloudflare.com/landmarks/1
 ```
 
 Response `200`:
@@ -101,7 +123,7 @@ Response `200`:
 { "id": "1", "name": "westlands", "location": { "lat": -1.2676, "lng": 36.8123 } }
 ```
 
-Unknown id (`curl https://booth-declare-workers-queens.trycloudflare.com/landmarks/9999`) returns `404`:
+Unknown id (`curl -H "X-API-Key: <your-api-key>" https://booth-declare-workers-queens.trycloudflare.com/landmarks/9999`) returns `404`:
 
 ```json
 { "code": "NOT_FOUND", "message": "No landmark found with id '9999'" }
@@ -119,7 +141,7 @@ Fare and ETA estimates across providers and ride types.
 | `sort` | no | `eta` or `fare`, ascending |
 
 ```bash
-curl "https://booth-declare-workers-queens.trycloudflare.com/rides?pickup_lat=-1.2864&pickup_lng=36.8172&dropoff_lat=-1.3197&dropoff_lng=36.8271&sort=fare"
+curl -H "X-API-Key: <your-api-key>" "https://booth-declare-workers-queens.trycloudflare.com/rides?pickup_lat=-1.2864&pickup_lng=36.8172&dropoff_lat=-1.3197&dropoff_lng=36.8271&sort=fare"
 ```
 
 Response `200` (array; empty `[]` if nothing matches):
@@ -155,7 +177,7 @@ Bad input (for example `pickup_lat=abc`, or `type=Spaceship`) returns `400`:
 One ride estimate, by the `id` returned from `GET /rides` (e.g. `uber-x`).
 
 ```bash
-curl https://booth-declare-workers-queens.trycloudflare.com/rides/uber-x
+curl -H "X-API-Key: <your-api-key>" https://booth-declare-workers-queens.trycloudflare.com/rides/uber-x
 ```
 
 Response `200`:
@@ -172,7 +194,7 @@ Response `200`:
 }
 ```
 
-Unknown id (`curl https://booth-declare-workers-queens.trycloudflare.com/rides/nonexistent-id`) returns `404`:
+Unknown id (`curl -H "X-API-Key: <your-api-key>" https://booth-declare-workers-queens.trycloudflare.com/rides/nonexistent-id`) returns `404`:
 
 ```json
 { "code": "NOT_FOUND", "message": "No ride estimate found with id 'nonexistent-id'" }
@@ -191,7 +213,9 @@ Every failure is JSON with the same two fields, and an HTTP status other than 20
 | Status | `code` | Meaning |
 |---|---|---|
 | 400 | `INVALID_PARAMETER` | Missing/non-numeric coordinates, or a bad `type` / `sort` value |
+| 401 | `UNAUTHORIZED` | Missing or invalid `X-API-Key` header |
 | 404 | `NOT_FOUND` | No landmark or ride estimate with that `id` |
+| 429 | `RATE_LIMITED` | More than 100 requests/minute on this key; see `Retry-After` |
 | 500 | `INTERNAL_ERROR` | The API could not reach or query its database |
 
 If the response is a JSON **array** or an object with `id`, it succeeded; if it
@@ -292,7 +316,7 @@ From the `backend/` folder, copy the example settings file:
 cp .env.example .env
 ```
 
-Open `.env` and set `DB_PASSWORD` to your MySQL root password (leave it empty if
+Open `.env`, set `API_KEYS` to a name and a long random key (generate one with `node -e "console.log(require('crypto').randomBytes(24).toString('hex'))"`; use that key as `<your-api-key>` in the examples), and set `DB_PASSWORD` to your MySQL root password (leave it empty if
 your root user has no password). The other defaults are fine:
 
 ```
@@ -301,6 +325,7 @@ DB_USER=root
 DB_PASSWORD=
 DB_NAME=ridecompare
 PORT=3001
+API_KEYS=local:<any-long-random-string>
 ```
 
 Then start the server:
@@ -316,8 +341,8 @@ fix your `.env` credentials and restart.
 Check it works:
 
 ```bash
-curl http://localhost:3001/providers
-curl http://localhost:3001/landmarks/1
+curl -H "X-API-Key: <your-api-key>" http://localhost:3001/providers
+curl -H "X-API-Key: <your-api-key>" http://localhost:3001/landmarks/1
 ```
 
 You should see the providers list and the `westlands` landmark. If you see `[]`,

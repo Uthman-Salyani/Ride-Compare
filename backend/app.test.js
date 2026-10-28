@@ -1,3 +1,7 @@
+// Week 9: every endpoint now needs an API key. Set it BEFORE index.js is loaded.
+process.env.API_KEYS = 'test:test-key-123'
+const KEY = 'test-key-123'
+
 const mockConnect = jest.fn()
 const mockQuery = jest.fn()
 
@@ -10,6 +14,11 @@ jest.mock('mysql2', () => ({
 
 const request = require('supertest')
 const app = require('./index')
+
+// Every request sends the API key header
+const api = {
+  get: url => request(app).get(url).set('X-API-Key', KEY)
+}
 
 function mockQueryOnce(expectedSql, rows, expectedParams) {
   mockQuery.mockImplementationOnce((sql, params, callback) => {
@@ -44,7 +53,7 @@ describe('GET /providers', () => {
     ])
 
     // Act
-    const res = await request(app).get('/providers')
+    const res = await api.get('/providers')
 
     // Assert
     expect(res.status).toBe(200)
@@ -67,7 +76,7 @@ describe('GET /providers', () => {
     mockQueryOnce('SELECT * FROM providers', [])
 
     // Act
-    const res = await request(app).get('/providers')
+    const res = await api.get('/providers')
 
     // Assert
     expect(res.status).toBe(200)
@@ -88,7 +97,7 @@ describe('GET /landmarks', () => {
     ])
 
     // Act
-    const res = await request(app).get('/landmarks')
+    const res = await api.get('/landmarks')
 
     // Assert
     expect(res.status).toBe(200)
@@ -111,7 +120,7 @@ describe('GET /landmarks', () => {
     mockQueryOnce('SELECT * FROM landmarks', [])
 
     // Act
-    const res = await request(app).get('/landmarks')
+    const res = await api.get('/landmarks')
 
     // Assert
     expect(res.status).toBe(200)
@@ -131,7 +140,7 @@ describe('GET /landmarks/:id', () => {
     ], ['7'])
 
     // Act
-    const res = await request(app).get('/landmarks/7')
+    const res = await api.get('/landmarks/7')
 
     // Assert
     expect(res.status).toBe(200)
@@ -147,7 +156,7 @@ describe('GET /landmarks/:id', () => {
     mockQueryOnce('SELECT * FROM landmarks WHERE id = ?', [], ['9999'])
 
     // Act
-    const res = await request(app).get('/landmarks/9999')
+    const res = await api.get('/landmarks/9999')
 
     // Assert
     expect(res.status).toBe(404)
@@ -189,7 +198,7 @@ describe('GET /rides', () => {
     ])
 
     // Act
-    const res = await request(app)
+    const res = await api
       .get('/rides')
       .query({
         pickup_lat: '-1.2864',
@@ -222,7 +231,7 @@ describe('GET /rides', () => {
     })
 
     // Act
-    const res = await request(app).get('/rides').query({
+    const res = await api.get('/rides').query({
       pickup_lat: 'abc',
       pickup_lng: '36.8172',
       dropoff_lat: '-1.3197',
@@ -242,7 +251,7 @@ describe('GET /rides', () => {
     mockQueryOnce('FROM ride_types r', [])
 
     // Act
-    const res = await request(app).get('/rides').query({
+    const res = await api.get('/rides').query({
       pickup_lat: '0',
       pickup_lng: '0',
       dropoff_lat: '0',
@@ -275,7 +284,7 @@ describe('GET /rides/:id', () => {
     ], ['ride_est_9f3a'])
 
     // Act
-    const res = await request(app).get('/rides/ride_est_9f3a')
+    const res = await api.get('/rides/ride_est_9f3a')
 
     // Assert
     expect(res.status).toBe(200)
@@ -295,7 +304,7 @@ describe('GET /rides/:id', () => {
     mockQueryOnce('WHERE r.id = ?', [], ['ride_est_missing'])
 
     // Act
-    const res = await request(app).get('/rides/ride_est_missing')
+    const res = await api.get('/rides/ride_est_missing')
 
     // Assert
     expect(res.status).toBe(404)
