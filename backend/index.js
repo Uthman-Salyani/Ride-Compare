@@ -159,6 +159,19 @@ app.get('/landmarks/:id', (req, res) => {
   })
 })
 
+// ─── Distance helper (add this above the /rides route) ────────────────────
+// Straight-line distance between two coordinates, in kilometres
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const toRad = d => d * (Math.PI / 180)
+  const R = 6371
+  const dLat = toRad(lat2 - lat1)
+  const dLon = toRad(lon2 - lon1)
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2
+  return R * 2 * Math.asin(Math.sqrt(a))
+}
+
 // ─── 4. GET /rides ────────────────────────────────────────────────────────
 app.get('/rides', (req, res) => {
   const { pickup_lat, pickup_lng, dropoff_lat, dropoff_lng, type, sort } = req.query
@@ -175,7 +188,7 @@ app.get('/rides', (req, res) => {
     })
   }
 
-  // Validates type parameter against OpenAPI enum
+  // Validates type parameter against allowed vehicle types
   const allowedTypes = ['boda', 'standard', 'xl', 'comfort', 'delivery']
   if (type && !allowedTypes.includes(type.toLowerCase())) {
     return res.status(400).json({
@@ -193,49 +206,58 @@ app.get('/rides', (req, res) => {
     })
   }
 
-  // JOIN ride_types with providers to include provider details
+  // Trip distance and duration come from the coordinates the caller sent.
+  // x1.2 accounts for roads not being straight lines; 3.5 min/km for Nairobi traffic.
+  const distanceKm  = haversineKm(
+    Number(pickup_lat), Number(pickup_lng),
+    Number(dropoff_lat), Number(dropoff_lng)
+  ) * 1.2
+  const durationMin = Math.max(5, Math.round(distanceKm * 3.5))
+
   const sql = `
-    SELECT r.*, p.name AS provider_name 
+    SELECT r.*, p.name AS provider_name
     FROM ride_types r
     JOIN providers p ON r.provider_id = p.id
   `
 
   db.query(sql, (err, results) => {
     if (err) return dbError(res, err)
-    
-    let filteredResults = [...results]
 
+    // Filter on the vehicle_type column (boda / standard / xl ...), not the display name
+    let rows = results
     if (type) {
-      filteredResults = filteredResults.filter(r => {
-        const rideType = r.type || r.vehicle_type
-        return String(rideType).toLowerCase() === type.toLowerCase()
-      })
+      rows = rows.filter(r => String(r.vehicle_type).toLowerCase() === type.toLowerCase())
     }
 
-    if (sort && sort.toLowerCase() === 'eta') {
-      filteredResults.sort((a, b) => a.eta_min - b.eta_min)
-    } else if (sort && sort.toLowerCase() === 'fare') {
-      filteredResults.sort((a, b) => parseFloat(a.base_fare) - parseFloat(b.base_fare))
-    }
-
-    // Maps database fields to RideEstimate contract schema
-    const response = filteredResults.map(row => ({
+    // Fare = base + per-km x distance + per-minute x duration
+    const response = rows.map(row => ({
       id: row.id,
       providerId: row.provider_id,
       providerName: row.provider_name,
       rideType: row.type || row.vehicle_type,
       fare: {
         currency: "KES",
-        amount: parseFloat(row.base_fare)
+        amount: Math.round(
+          parseFloat(row.base_fare) +
+          parseFloat(row.per_km)  * distanceKm +
+          parseFloat(row.per_min) * durationMin
+        )
       },
       etaMinutes: parseInt(row.eta_min, 10),
       capacity: parseInt(row.capacity, 10)
     }))
-    
+
+    // Default to cheapest-first so the frontend's "best value" (first item) is correct
+    const sortKey = (sort || 'fare').toLowerCase()
+    if (sortKey === 'eta') {
+      response.sort((a, b) => a.etaMinutes - b.etaMinutes)
+    } else {
+      response.sort((a, b) => a.fare.amount - b.fare.amount)
+    }
+
     res.status(200).json(response)
   })
 })
-
 // ─── 5. GET /rides/:id ────────────────────────────────────────────────────
 app.get('/rides/:id', (req, res) => {
   const { id } = req.params

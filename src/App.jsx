@@ -1,57 +1,51 @@
 import { useState } from 'react'
-import LandingPage from './pages/LandingPage.jsx'
-import SearchPage from './pages/SearchPage.jsx'
-import ResultsPage from './pages/ResultsPage.jsx'
-import BookingPage from './pages/BookingPage.jsx'
+import LandingPage  from './pages/LandingPage.jsx'
+import SearchPage   from './pages/SearchPage.jsx'
+import ResultsPage  from './pages/ResultsPage.jsx'
+import BookingPage  from './pages/BookingPage.jsx'
+import EventsPage   from './pages/EventsPage.jsx'
 
 /*
-  App.jsx is the root component. It controls which "page" is currently visible
-  by tracking a 'screen' state variable.
-
-  The screens are:
-    1. 'landing' — overview and introduction
-    2. 'search'   — user enters pickup and dropoff
-    3. 'results'  — comparison cards are shown
-    4. 'booking'  — simulated booking confirmation
-
-  We also store the search data and the chosen ride here so we can pass
-  them down to the relevant pages as props.
+  Screens:
+    'landing'  — hero + entry points
+    'search'   — route input form
+    'results'  — fare comparison
+    'booking'  — simulated booking confirmation
+    'events'   — today's campus events with ride options
 */
-
 export default function App() {
-  // Which screen is currently showing
-  const [screen, setScreen] = useState('landing')
-
-  // The route data from the search (pickup, dropoff, distance, duration)
-  const [routeData, setRouteData] = useState(null)
-
-  // The ride option the user picked from the results
+  const [screen,     setScreen]     = useState('landing')
+  const [routeData,  setRouteData]  = useState(null)
   const [chosenRide, setChosenRide] = useState(null)
+  const [eventsPickup, setEventsPickup] = useState('')
 
-  // Called when the user clicks the hero CTA on the landing page
   function handleStart() {
     setRouteData(null)
     setChosenRide(null)
     setScreen('search')
   }
 
-  // Called when the user submits the search form
   function handleSearch(data) {
     setRouteData(data)
     setScreen('results')
   }
 
-  // Called when the user clicks "Book" on a ride card
-  function handleBook(ride) {
+  // route is optional: events bookings pass their own trip so BookingPage has one to show
+  function handleBook(ride, route) {
+    if (route) setRouteData(route)
     setChosenRide(ride)
     setScreen('booking')
   }
 
-  // Called when the user wants to go back to the landing page
   function handleReset() {
     setRouteData(null)
     setChosenRide(null)
     setScreen('landing')
+  }
+
+  function handleViewEvents(pickup) {
+    setEventsPickup(pickup)
+    setScreen('events')
   }
 
   return (
@@ -61,15 +55,12 @@ export default function App() {
         <div className="absolute right-[-6rem] top-40 h-72 w-72 rounded-full bg-sky-200/40 blur-3xl" />
       </div>
 
-      {/* Top navigation bar — always visible */}
       <nav className="fixed inset-x-0 top-0 z-50 border-b border-white/60 bg-white/80 px-6 py-3 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <span className="inline-block h-3 w-3 rounded-full bg-emerald-500 shadow-[0_0_18px_rgba(16,185,129,0.65)]" />
             <span className="text-base font-black tracking-tight text-slate-950 sm:text-lg">RideCompare</span>
           </div>
-
-{/* Conditional button: "Get Started" on landing, "New search" on other screens */}
           {screen === 'landing' ? (
             <button
               onClick={handleStart}
@@ -82,31 +73,29 @@ export default function App() {
               onClick={handleReset}
               className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-slate-950"
             >
-              ← New search
+              ← Home
             </button>
           )}
         </div>
       </nav>
 
-      {/* Render the correct page based on current screen */}
       <main className="relative z-10 mx-auto max-w-6xl px-4 py-24 sm:px-6 lg:px-8">
         {screen === 'landing' && (
-          <LandingPage onStart={handleStart} />
+          <LandingPage onStart={handleStart} onViewEvents={handleViewEvents} />
         )}
-
         {screen === 'search' && (
           <SearchPage onSearch={handleSearch} />
         )}
-
         {screen === 'results' && (
           <ResultsPage routeData={routeData} onBook={handleBook} />
         )}
-
         {screen === 'booking' && (
           <BookingPage ride={chosenRide} routeData={routeData} onReset={handleReset} />
         )}
+        {screen === 'events' && (
+          <EventsPage pickup={eventsPickup} onBook={handleBook} onReset={handleReset} />
+        )}
       </main>
-
     </div>
   )
 }
