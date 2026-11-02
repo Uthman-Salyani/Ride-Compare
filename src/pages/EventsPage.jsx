@@ -10,8 +10,8 @@ import { getEventDemand, reserveRide, getScarcity, stockLevel, typeLabel } from 
     2. Work out the route from the user's pickup to that landmark
     3. Fetch fares for that route
     4. Look up the (simulated) demand for that event and drop ride types that are sold out
-    5. Pick the fastest and cheapest of what's left and compare door-to-door time
-       against the minutes left before the event
+    5. Show the fastest and cheapest of what's left, for the ride type tab the user picked
+       ("All" by default), and compare door-to-door time against the minutes left
 
   Props:
     pickup       the validated pickup the user typed on the landing page
@@ -114,16 +114,28 @@ export default function EventsPage({ pickup, onBook }) {
   const [cards,   setCards]   = useState([])
   const [loading, setLoading] = useState(true)
   const [error,   setError]   = useState(false)
+  const [staleAt, setStaleAt]   = useState(null)   // null = live data, a Date = saved copy from the backend
+
+  // Which ride type tab is active on each event card: { evt_3: 'boda', evt_5: 'xl' }
+  // A card with no entry here is on the "All" tab.
+  const [selectedTypes, setSelectedTypes] = useState({})
+
+  function selectType(eventId, type) {
+    setSelectedTypes(prev => ({ ...prev, [eventId]: type }))
+  }
 
   useEffect(() => {
     let cancelled = false
 
     async function load() {
       try {
-        const [eventsData, landmarkRows] = await Promise.all([
+        const [eventsResult, landmarkRows] = await Promise.all([
           getEvents(),
           apiFetch('/landmarks').then(r => r.json()),
         ])
+        // /events now returns { data, stale, asOf }; a bare array is still accepted just in case
+        const eventsData = Array.isArray(eventsResult) ? eventsResult : eventsResult.data
+        const staleDate  = !Array.isArray(eventsResult) && eventsResult.stale ? new Date(eventsResult.asOf) : null
         const landmarkNames = landmarkRows.map(l => l.name.toLowerCase())
 
         // Today's remaining events, soonest first, each tagged with its landmark
@@ -149,6 +161,7 @@ export default function EventsPage({ pickup, onBook }) {
 
         if (!cancelled) {
           setCards(upcoming.map(ev => ({ ...ev, ...(lookups[ev.landmark] || {}) })))
+          setStaleAt(staleDate)
           setLoading(false)
         }
       } catch {
@@ -173,6 +186,13 @@ export default function EventsPage({ pickup, onBook }) {
           Ride options from <span className="font-medium text-slate-700">{pickup}</span> · times in your local time
         </p>
       </div>
+
+      {/* Shown when the backend could not reach the partner and sent its last saved copy */}
+      {!loading && !error && staleAt && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-medium text-amber-700">
+          Showing saved events from {formatTime(staleAt)}. The events service is not responding.
+        </div>
+      )}
 
       {loading && (
         <div className="flex flex-col items-center justify-center gap-3 py-16">
@@ -205,20 +225,30 @@ export default function EventsPage({ pickup, onBook }) {
             const allRides = ev.rides || []
             const hasRides = allRides.length > 0
 
-            // Only ride types that still have seats left can be offered
-            const available = allRides.filter(r => (demand[r.vehicle_type]?.remaining ?? 1) > 0)
+            // Ride types this event has options for (these become the tabs)
+            const typesHere = Object.keys(demand).filter(t => allRides.some(r => r.vehicle_type === t))
+
+            // Which tab is active on this card ('all' = best picks across every ride type)
+            const selected        = selectedTypes[ev.id] || 'all'
+            const selectedSoldOut = selected !== 'all' && demand[selected]?.remaining === 0
+
+            // Rides in the active tab, minus anything sold out
+            const pool      = selected === 'all' ? allRides : allRides.filter(r => r.vehicle_type === selected)
+            const available = pool.filter(r => (demand[r.vehicle_type]?.remaining ?? 1) > 0)
             const canBook   = available.length > 0
 
             const fastest  = canBook ? pickFastest(available)  : null
             const cheapest = canBook ? pickCheapest(available) : null
             const same     = canBook && fastest.id === cheapest.id
 
-            // Ride types that would have been picked if they weren't sold out
-            const idealTypes   = hasRides ? [pickFastest(allRides), pickCheapest(allRides)].map(r => r.vehicle_type) : []
+            // "All" tab only: ride types that would have been picked if they weren't sold out
+            const idealTypes   = selected === 'all' && hasRides
+              ? [pickFastest(allRides), pickCheapest(allRides)].map(r => r.vehicle_type)
+              : []
             const soldOutPicks = [...new Set(idealTypes)].filter(t => demand[t]?.remaining === 0)
 
-            // Ride types this event actually has options for (for the availability chips)
-            const typesHere = Object.keys(demand).filter(t => allRides.some(r => r.vehicle_type === t))
+            // Other ride types that still have rides left (suggested when a tab is sold out)
+            const alternatives = typesHere.filter(t => t !== selected && demand[t].remaining > 0)
 
             const bookWith = ride => () => {
               reserveRide(ev.id, ride.vehicle_type)   // takes one ride out of the pool
@@ -262,19 +292,31 @@ export default function EventsPage({ pickup, onBook }) {
                       {ev.route.distance} km · about {tripMin} min trip from {pickup}
                     </p>
 
-                    {/* Availability chips: how many rides are left per ride type */}
+                    {/* Ride type tabs: click one to switch this card to that ride type */}
                     <div className="mb-3 flex flex-wrap gap-2">
-                      {typesHere.map(t => {
-                        const d = demand[t]
+                      {['all', ...typesHere].map(t => {
+                        const isActive = selected === t
+                        const d = demand[t]   // undefined for the 'all' tab
+                        const label = t === 'all'
+                          ? 'All'
+                          : `${typeLabel(t)}: ${d.remaining === 0 ? 'sold out' : `${d.remaining} left`}`
+                        const colour = t === 'all' ? CHIP_STYLE.ok : CHIP_STYLE[stockLevel(d)]
+
                         return (
-                          <span key={t} className={`rounded-full px-2.5 py-1 text-xs font-medium ${CHIP_STYLE[stockLevel(d)]}`}>
-                            {typeLabel(t)}: {d.remaining === 0 ? 'sold out' : `${d.remaining} left`}
-                          </span>
+                          <button
+                            key={t}
+                            onClick={() => selectType(ev.id, t)}
+                            aria-pressed={isActive}
+                            className={`rounded-full px-2.5 py-1 text-xs font-medium transition ${colour}
+                              ${isActive ? 'ring-2 ring-slate-900' : 'hover:ring-1 hover:ring-slate-300'}`}
+                          >
+                            {label}
+                          </button>
                         )
                       })}
                     </div>
 
-                    {/* The best option was sold out, so point the user at the next best one */}
+                    {/* "All" tab: the best option was sold out, so we show the next best */}
                     {canBook && soldOutPicks.length > 0 && (
                       <div className="mb-3 rounded-xl bg-red-50 px-4 py-2 text-xs font-medium text-red-600">
                         🚫 {soldOutPicks.map(typeLabel).join(' and ')} {soldOutPicks.length > 1 ? 'are' : 'is'} fully
@@ -282,7 +324,30 @@ export default function EventsPage({ pickup, onBook }) {
                       </div>
                     )}
 
-                    {!canBook && (
+                    {/* A specific tab is sold out: suggest the other ride types */}
+                    {selectedSoldOut && (
+                      <div className="mb-3 rounded-xl bg-red-50 px-4 py-2 text-xs font-medium text-red-600">
+                        🚫 {typeLabel(selected)} is fully booked for this event.
+                        {alternatives.length > 0 && (
+                          <span>
+                            {' '}Try{' '}
+                            {alternatives.map((t, i) => (
+                              <span key={t}>
+                                {i > 0 && ', '}
+                                <button
+                                  onClick={() => selectType(ev.id, t)}
+                                  className="underline underline-offset-2"
+                                >
+                                  {typeLabel(t)} ({demand[t].remaining} left)
+                                </button>
+                              </span>
+                            ))}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {!canBook && !selectedSoldOut && (
                       <div className="rounded-xl bg-red-50 px-4 py-2 text-xs font-medium text-red-600">
                         🚫 Every ride type is fully booked for this event.
                       </div>

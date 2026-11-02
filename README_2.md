@@ -72,6 +72,55 @@ Wait `retryAfter` seconds, then retry.
 
 ---
 
+## Monitoring: `GET /stats`
+
+Returns running totals since the server last started. **Requires an API key**, like every other endpoint.
+
+```bash
+curl -s -H "X-API-Key: <your-api-key>" http://localhost:3001/stats
+```
+
+| Field | Meaning |
+|---|---|
+| `startedAt`, `uptimeSeconds` | When the server started and how long it has been up |
+| `total` | Every finished request since start |
+| `clientErrors` / `serverErrors` | Count of 4xx / 5xx responses |
+| `errorRatePercent` | `serverErrors / total` as a percent (5xx only) |
+| `avgMs` | Mean response time in milliseconds |
+| `routes` | Per-route `count`, `clientErrors`, `serverErrors`, `avgMs`, `maxMs`. Routes are grouped by pattern (`GET /landmarks/:id`), not by raw path |
+
+The `GET (no route)` row holds requests that never reached a route: 401 (bad or missing key), 429 (rate limited) and 404 for paths that don't exist. Check the request log to tell them apart.
+
+Example response (after about 540 test requests from two callers):
+
+```json
+{
+  "startedAt": "2026-11-02T04:57:48.661Z",
+  "uptimeSeconds": 20579,
+  "total": 540,
+  "clientErrors": 361,
+  "serverErrors": 0,
+  "errorRatePercent": 0,
+  "avgMs": 87.6,
+  "routes": {
+    "GET /rides/:id":     { "count": 31,  "clientErrors": 31,  "serverErrors": 0, "avgMs": 2.3,    "maxMs": 12.6 },
+    "GET /landmarks/:id": { "count": 80,  "clientErrors": 36,  "serverErrors": 0, "avgMs": 1.5,    "maxMs": 3 },
+    "GET /events":        { "count": 37,  "clientErrors": 0,   "serverErrors": 0, "avgMs": 1258.6, "maxMs": 5195 },
+    "GET /providers":     { "count": 36,  "clientErrors": 0,   "serverErrors": 0, "avgMs": 1.5,    "maxMs": 3.1 },
+    "GET (no route)":     { "count": 264, "clientErrors": 264, "serverErrors": 0, "avgMs": 0.6,    "maxMs": 2.8 },
+    "GET /rides":         { "count": 40,  "clientErrors": 30,  "serverErrors": 0, "avgMs": 3.4,    "maxMs": 52.1 },
+    "GET /landmarks":     { "count": 50,  "clientErrors": 0,   "serverErrors": 0, "avgMs": 3.6,    "maxMs": 48.9 },
+    "GET /stats":         { "count": 2,   "clientErrors": 0,   "serverErrors": 0, "avgMs": 1,      "maxMs": 1.1 }
+  }
+}
+```
+
+### Request log
+
+Every request is also written to the console as one JSON line (`time`, `method`, `path`, `status`, `ms`, `caller`). The key is never logged: `caller` is a short hash like `key-99b75d`, or `none` when no valid key was sent. Query strings and request bodies are never logged.
+
+Numbers are kept in memory, so they reset on restart. `/stats` does not count itself in its own reply, but it appears in the next one.
+
 ## Endpoints
 
 ### GET /providers
