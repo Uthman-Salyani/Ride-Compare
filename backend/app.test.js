@@ -182,6 +182,8 @@ describe('GET /rides', () => {
         type: 'Boda',
         vehicle_type: 'Boda',
         base_fare: '180',
+        per_km: '20',
+        per_min: '3',
         eta_min: '4',
         capacity: '1'
       },
@@ -192,6 +194,8 @@ describe('GET /rides', () => {
         type: 'Standard',
         vehicle_type: 'Standard',
         base_fare: '450',
+        per_km: '30',
+        per_min: '5',
         eta_min: '7',
         capacity: '4'
       }
@@ -217,7 +221,8 @@ describe('GET /rides', () => {
         providerId: 'prov_littlecab',
         providerName: 'Little Cab',
         rideType: 'Standard',
-        fare: { currency: 'KES', amount: 450 },
+        // 450 base + 30/km x 4.635 km + 5/min x 16 min = 669 (distance and duration come from the coordinates sent)
+        fare: { currency: 'KES', amount: 669 },
         etaMinutes: 7,
         capacity: 4
       }

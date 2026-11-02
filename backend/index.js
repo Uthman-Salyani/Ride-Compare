@@ -2,6 +2,8 @@ const express = require('express')
 const mysql = require('mysql2')
 const cors = require('cors')
 require('dotenv').config()
+const { fetchWithRetry } = require('./resilientFetch')
+const { monitor, statsHandler } = require('./monitoring') // Week 12
 
 const app = express()
 app.disable('x-powered-by') // don't advertise the framework in response headers
@@ -12,6 +14,10 @@ app.use(cors({
   methods: ['GET', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'X-API-Key']
 }))
+
+// Week 12: log + count every request. After cors (so OPTIONS preflights aren't logged),
+// but BEFORE requireApiKey so 401s and 429s are logged too.
+app.use(monitor)
 
 app.use(express.json())
 
@@ -72,6 +78,7 @@ function rateLimit({ windowMs, max }) {
 app.set('trust proxy', 1) // behind the Cloudflare tunnel
 app.use(requireApiKey)    // MUST come before every route (cors above handles OPTIONS preflight first)
 app.use(rateLimit({ windowMs: 60000, max: Number(process.env.RATE_LIMIT_MAX) || 100 }))
+app.get('/stats', statsHandler) // Week 12: behind the key check on purpose
 
 // Never send database error text (table names, queries) to callers
 function dbError(res, err) {
@@ -375,27 +382,40 @@ function formatDriverRow(row) {
 
 const PARTNER_URL = process.env.PARTNER_URL; // e.g. https://mental-health-l6ub.onrender.com/api (no trailing slash)
 
+// Week 11 resilience settings. Worst case wait = (RETRIES + 1) x TIMEOUT + delays
+// = 3 x 1500 + 200 + 400 = 5100 ms with the defaults.
+const PARTNER_TIMEOUT_MS = Number(process.env.PARTNER_TIMEOUT_MS) || 1500
+const PARTNER_RETRIES = 2
+const PARTNER_DELAY_MS = 200
+
+let lastGood = null // { data, asOf }, kept in memory (lost on server restart)
+
 app.get('/events', async (req, res) => {
   try {
     const today = new Date().toISOString().slice(0, 10);
-    const r = await fetch(`${PARTNER_URL}/events?after=${today}`, {
-      headers: { 'X-API-Key': process.env.STRATHMORE_API_KEY || '' }, // upstream key, only from the environment
-      signal: AbortSignal.timeout(60000)                              // Render's free tier can take ~1 min to wake up
-    });
+    const r = await fetchWithRetry(
+      `${PARTNER_URL}/events?after=${today}`,
+      { headers: { 'X-API-Key': process.env.STRATHMORE_API_KEY || '' } }, // upstream key, only from the environment
+      { timeoutMs: PARTNER_TIMEOUT_MS, retries: PARTNER_RETRIES, delayMs: PARTNER_DELAY_MS }
+    );
     const contentType = r.headers.get('content-type') || '';
     if (!r.ok || !contentType.includes('application/json')) {
-      console.error('partner returned', r.status, contentType);
-      return res.status(502).json({ code: 'UPSTREAM_UNAVAILABLE', message: 'Events are unavailable right now' });
+      throw new Error(`partner returned ${r.status} ${contentType}`);
     }
     const events = await r.json();
-    res.json(
-      events
-        .filter(e => !e.cancelled)
-        .map(e => ({ id: e.id, title: e.title, location: e.location, startTime: e.startTime }))
-    );
+    const data = events
+      .filter(e => !e.cancelled)
+      .map(e => ({ id: e.id, title: e.title, location: e.location, startTime: e.startTime }));
+    lastGood = { data, asOf: new Date().toISOString() };
+    return res.json({ data, stale: false, asOf: lastGood.asOf });
   } catch (err) {
-    console.error('partner call failed:', err.cause?.code || err.name);
-    res.status(502).json({ code: 'UPSTREAM_UNAVAILABLE', message: 'Events are unavailable right now' });
+    // Log the reason only (never the key, never the full URL with query secrets)
+    const reason = err.name === 'TimeoutError' ? 'timeout' : (err.cause?.code || err.message);
+    console.error('partner call failed:', reason);
+    if (lastGood) {
+      return res.json({ data: lastGood.data, stale: true, asOf: lastGood.asOf });
+    }
+    return res.status(502).json({ code: 'UPSTREAM_UNAVAILABLE', message: 'Events are unavailable right now' });
   }
 });
 
